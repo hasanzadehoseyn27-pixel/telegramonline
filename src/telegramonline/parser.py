@@ -231,7 +231,15 @@ def _line_for_span(text: str, start: int) -> str:
     return text[line_start:line_end].strip()
 
 
-def _score_price_candidate(text: str, match: re.Match[str], vehicle_key: str | None) -> tuple[int | None, int]:
+SHAMSI_YEAR_PRESENT_RE = re.compile(r"\b14\d{2}\b|(?:مدل|سال)\s*(?:14\d{2}|40[0-9]|[789]\d)\b")
+
+
+def _score_price_candidate(
+    text: str,
+    match: re.Match[str],
+    vehicle_key: str | None,
+    shamsi_year_present: bool = False,
+) -> tuple[int | None, int]:
     token = match.group(1)
     start, end = match.span(1)
     before = text[max(0, start - 28) : start]
@@ -279,6 +287,15 @@ def _score_price_candidate(text: str, match: re.Match[str], vehicle_key: str | N
         return None, -60
     if 2010 <= raw_value <= 2030 and not explicit_price and not mostly_number_line:
         return None, -60
+    if (
+        2010 <= raw_value <= 2027
+        and not explicit_price
+        and not re.search(r"[./,]", token)
+        and not shamsi_year_present
+    ):
+        # عدد ۴ رقمی شبیه سال میلادی، بدون جداکننده و بدون هیچ سال شمسی در پیام
+        # => این سالِ مدل خودروی وارداتی است، نه قیمت (مثل: «مزدا ez6 سفید \n ۲۰۲۵»)
+        return None, -100
 
     score = 0
     if PRICE_HINT_RE.search(context):
@@ -295,9 +312,21 @@ def _score_price_candidate(text: str, match: re.Match[str], vehicle_key: str | N
         score -= 25
     if re.search(r"کار|امپر|آمپر|km|کیلومتر", line, flags=re.IGNORECASE):
         score -= 35
-    if raw_value <= 12 and not re.fullmatch(r"\D*\d\D*", line):
+    if raw_value <= 12 and not _is_bare_number_line(token, line):
         score -= 40
     return normalized_price, score
+
+
+def _is_bare_number_line(token: str, line: str) -> bool:
+    """آیا خط واقعاً فقط همین عدد است (بدون هیچ حرف یا رقم دیگر)؟
+
+    قبلاً اینجا با \\D (غیر-رقم) چک می‌شد که اشتباهاً حروف فارسی را هم
+    «غیر رقم» حساب می‌کرد و خطوطی مثل «سند آماده ۱ ساعته» را هم به اشتباه
+    «خط تنها-عدد» تشخیص می‌داد. همچنین باید رقم دیگری هم در خط نباشد،
+    وگرنه خطوطی مثل «۱۴۰۵،۲» (سال،برج) رقم دوم را قیمت حساب می‌کنند.
+    """
+    rest = line.replace(token, "", 1)
+    return not re.search(r"[A-Za-zآ-ی0-9]", rest)
 
 
 def _normalize_price_value(token: str, raw_value: int, line: str) -> int | None:
@@ -311,15 +340,16 @@ def _normalize_price_value(token: str, raw_value: int, line: str) -> int | None:
             if first <= 99 and len(parts[1]) in (2, 3):
                 return first * 1000 + second
             return raw_value
-    if 1 <= raw_value <= 9 and re.fullmatch(r"\D*\d\D*", line):
+    if 1 <= raw_value <= 9 and _is_bare_number_line(token, line):
         return raw_value * 1000
     return raw_value
 
 
 def detect_price(text: str, vehicle_key: str | None) -> int | None:
     candidates: list[tuple[int, int]] = []
+    shamsi_year_present = bool(SHAMSI_YEAR_PRESENT_RE.search(text))
     for match in NUMBER_RE.finditer(text):
-        price, score = _score_price_candidate(text, match, vehicle_key)
+        price, score = _score_price_candidate(text, match, vehicle_key, shamsi_year_present)
         if price is not None and score >= 15:
             candidates.append((score, price))
     if not candidates:
@@ -347,10 +377,23 @@ def confidence_score(ad: ParsedAd) -> float:
     return max(0.0, min(1.0, round(score, 2)))
 
 
+def build_dedup_key(normalized_text: str) -> str:
+    """کلید تشخیص تکراری واقعی: فاصله/بزرگی‌کوچکی حروف/ایموجی را نادیده می‌گیرد.
+
+    مثال: «کوییکgxrسفید...۴۲هزار» و «کوییک GXR سفید ... ۴۲ هزار 📞»
+    باید یک آگهی حساب شوند، نه دو آگهی جدا.
+    """
+    lowered = normalized_text.lower()
+    # فقط حروف فارسی، حروف انگلیسی و رقم را نگه می‌داریم؛ باقی (فاصله، ایموجی،
+    # علامت‌ها) حذف می‌شود تا تفاوت‌های ظاهری روی تشخیص تکراری اثر نگذارند.
+    return re.sub(r"[^0-9a-zA-Zآ-ی]", "", lowered)
+
+
 def parse_message(
     source_message_id: str,
     raw_text: str,
     message_date: datetime | None = None,
+    source: str = "import",
 ) -> ParsedAd:
     normalized = normalize_text(raw_text)
     compact = compact_text(normalized)
@@ -360,6 +403,8 @@ def parse_message(
         source_message_id=source_message_id,
         raw_text=raw_text.strip(),
         normalized_text=normalized,
+        dedup_key=build_dedup_key(normalized),
+        source=source,
         message_date=message_date,
         vehicle_key=vehicle_key,
         vehicle_name=vehicle_name,

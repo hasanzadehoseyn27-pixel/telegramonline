@@ -114,6 +114,75 @@ class ParserTests(unittest.TestCase):
         self.assertIsNone(ad.price_million)
         self.assertEqual(ad.trim, "v1")
 
+    # ===== تست‌های جدید برای باگ سال میلادی =====
+
+    def test_miladi_year_alone_is_not_price(self) -> None:
+        ad = parse_message(
+            "m1",
+            """
+            مزدا ez6 سفید
+            ۲۰۲۵
+            پلاک مدارک آماده
+            09191599213
+            """,
+        )
+        self.assertEqual(ad.vehicle_key, "mazda_ez6")
+        self.assertIsNone(ad.price_million)
+        self.assertEqual(ad.year, 2025)
+
+    def test_miladi_2026_corolla_not_price(self) -> None:
+        ad = parse_message(
+            "m2",
+            """
+            کرولا کراس نیوفیس سفید
+            ۲۰۲۶
+            با پلاک و مدارک
+            قابل تحویل
+            خوش قیمت 🔥🔥🔥🔥
+            09131631070
+            """,
+        )
+        self.assertIsNone(ad.price_million)
+        self.assertEqual(ad.year, 2026)
+
+    def test_shamsi_year_present_2040_still_price(self) -> None:
+        # وقتی سال شمسی در پیام هست، عدد 2040 قیمت واقعی است
+        ad = parse_message(
+            "m3",
+            "شاهین دنده ای سفید ۱۴۰۵ برج ۴\n2020\n09122148772",
+        )
+        self.assertEqual(ad.price_million, 2020)
+
+    def test_single_digit_inside_sentence_is_not_price(self) -> None:
+        # «سند آماده ۱ ساعته» نباید ۱۰۰۰ میلیون حساب شود
+        ad = parse_message(
+            "bug1",
+            """
+            کوییک gxrl سفید مشکی با رینگ شرکتی
+            ۴۰۴/۱۰
+            گارانتی فعال
+            پلاک گیلان با میخ لاستیک سند آماده ۱ ساعته
+            🔥🔥
+            موجود نمایشگاه
+            09113310946
+            """,
+        )
+        self.assertIsNone(ad.price_million)
+
+    def test_year_month_compact_notation_not_price(self) -> None:
+        # «۱۴۰۵،۲» یعنی سال،برج نه قیمت؛ قیمت واقعی خط بعدی (۱۶۹۵) است
+        ad = parse_message(
+            "bug1b",
+            "۲۰۷ تیو۳\n۱۴۰۵،۲\nفردایی با طلایی نقدی\n۱۶۹۵\nحسن پور",
+        )
+        self.assertEqual(ad.price_million, 1695)
+
+    def test_dedup_key_ignores_spacing_and_case(self) -> None:
+        # همان آگهی با فاصله‌گذاری/بزرگی حروف متفاوت باید کلید یکسان بدهد
+        ad_a = parse_message("dup_a", "کوییکgxrسفید مدل403کارکرد42هزار 1010\n09195424677")
+        ad_b = parse_message("dup_b", "🚘 کوییک GXR سفید مدل ۴۰۳ کارکرد ۴۲ هزار\n۱۰۱۰ 📞 09195424677")
+        self.assertEqual(ad_a.dedup_key, ad_b.dedup_key)
+
 
 if __name__ == "__main__":
     unittest.main()

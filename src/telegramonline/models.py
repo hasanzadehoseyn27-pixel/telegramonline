@@ -9,6 +9,8 @@ class ParsedAd:
     source_message_id: str
     raw_text: str
     normalized_text: str
+    dedup_key: str
+    source: str
     message_date: datetime | None
     vehicle_key: str | None
     vehicle_name: str | None
@@ -22,4 +24,3 @@ class ParsedAd:
     status: str
     delivery: str | None
     confidence: float
-
