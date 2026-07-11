@@ -102,6 +102,99 @@ def split_export_messages(path: str | Path) -> list[tuple[str, str]]:
     return messages
 
 
+def _is_separator_line(line: str) -> bool:
+    """آیا این خط فقط یک نویسه‌ی تکرارشده است؟ (مثل ______ یا ====== یا ➖➖➖➖)
+
+    این خطوط معمولاً برای جدا کردن چند آگهی مستقل داخل یک پیام تلگرام
+    استفاده می‌شوند. حداقل ۸ بار تکرار لازم است تا اشتباهی روی خطوط
+    تزئینی کوتاه (مثل 🔥🔥🔥) فعال نشود.
+    """
+    stripped = line.strip()
+    if len(stripped) < 8:
+        return False
+    first = stripped[0]
+    if first.isalnum():
+        return False
+    return all(ch == first for ch in stripped)
+
+
+PRICE_MARKER_CHARS = "🔴🟡🟢🔵🟠🟣⚫⚪🟤💰💵💸💲"
+FULL_DATE_RE = re.compile(r"\b14\d{2}/\d{1,2}/\d{1,2}\b")
+
+
+def _is_price_only_paragraph(paragraph: str) -> bool:
+    """آیا این خط/پاراگراف فقط یک «خط قیمتِ مستقل» است؟
+
+    باید نشانه‌رنگی (🔴🟡...) یا جداکننده هزارگان (./,) داشته باشد، وگرنه
+    یک شماره تلفن ساده (که هم فقط رقم است) به‌اشتباه مرز آگهی حساب می‌شود.
+    """
+    stripped = paragraph.strip()
+    if not stripped or re.search(r"[A-Za-zآ-ی]", stripped):
+        return False
+    if FULL_DATE_RE.search(stripped):
+        return False
+    digits_only = re.sub(r"\D", "", stripped)
+    if not digits_only:
+        return False
+    if PHONE_RE.fullmatch(digits_only) or SPACED_PHONE_RE.fullmatch(stripped):
+        return False
+    has_marker = any(ch in stripped for ch in PRICE_MARKER_CHARS)
+    has_separator = bool(re.search(r"[./,]", stripped))
+    return has_marker or has_separator
+
+
+def _split_by_price_lines(raw_text: str) -> list[str]:
+    """پیام‌های چندتایی بدون خط جداکننده را از روی خطوطِ قیمت می‌شکند.
+
+    هر خطِ قیمت، پایان‌بخشِ همان آگهی است (چه با خط خالی از توضیحش جدا شده
+    باشد چه فقط با یک Enter). خطوط انتهایی بدون قیمت (مثل شماره تماس یا
+    لینک مشترک) به آخرین آگهی می‌چسبند.
+    """
+    lines = raw_text.split("\n")
+    blocks: list[str] = []
+    current: list[str] = []
+    for line in lines:
+        current.append(line)
+        if _is_price_only_paragraph(line):
+            block = "\n".join(current).strip()
+            if block:
+                blocks.append(block)
+            current = []
+    tail = "\n".join(current).strip()
+    if tail:
+        if blocks:
+            blocks[-1] = blocks[-1] + "\n\n" + tail
+        else:
+            blocks.append(tail)
+    return blocks if len(blocks) > 1 else [raw_text]
+
+
+def split_multi_ad_blocks(raw_text: str) -> list[str]:
+    """یک پیام تلگرام را روی خطوط جداکننده به چند «آگهی مستقل» می‌شکند.
+
+    دو روش را امتحان می‌کند: اول خط جداکننده‌ی صریح (______)، بعد پاراگراف‌های
+    قیمتِ تکرارشونده (برای پیام‌هایی که جداکننده ندارند). اگر هیچ‌کدام بیش از
+    یک تکه ندهند، پیام دست‌نخورده برمی‌گردد.
+    """
+    lines = raw_text.split("\n")
+    blocks: list[str] = []
+    current: list[str] = []
+    for line in lines:
+        if _is_separator_line(line):
+            block = "\n".join(current).strip()
+            if block:
+                blocks.append(block)
+            current = []
+        else:
+            current.append(line)
+    tail = "\n".join(current).strip()
+    if tail:
+        blocks.append(tail)
+    if len(blocks) > 1:
+        return blocks
+    return _split_by_price_lines(raw_text)
+
+
 def detect_vehicle(text: str) -> tuple[str | None, str | None]:
     lowered = text.lower()
     for key, name, pattern in VEHICLE_PATTERNS:
@@ -256,6 +349,9 @@ def _score_price_candidate(
 
     if PHONE_RE.fullmatch(token):
         return None, -100
+    if re.fullmatch(r"(?:140\d|40\d)/(?:1[0-2]|0?[1-9])", token):
+        # نماد فشرده «سال/برج» مثل ۴۰۵/۲ یا ۱۴۰۵/۱۲ — قیمت نیست
+        return None, -100
     if re.search(r"(?:\+?98|0)?9\d{9}", token):
         return None, -100
     if SPACED_PHONE_RE.search(line):
@@ -345,9 +441,19 @@ def _normalize_price_value(token: str, raw_value: int, line: str) -> int | None:
     return raw_value
 
 
+def _mask_full_dates(text: str) -> str:
+    """تاریخ کامل مثل ۱۴۰۵/۰۴/۱۷ را قبل از تشخیص قیمت با فاصله جایگزین می‌کند.
+
+    وگرنه تکه‌ی «۰۴/۱۷» از وسط تاریخ با الگوی رایج «X/YYY یعنی X۰۰۰+YYY میلیون»
+    قاطی می‌شود و مثلاً عدد ۴۰۱۷ به‌جای قیمت واقعی ساخته می‌شود.
+    """
+    return FULL_DATE_RE.sub(lambda m: " " * len(m.group(0)), text)
+
+
 def detect_price(text: str, vehicle_key: str | None) -> int | None:
-    candidates: list[tuple[int, int]] = []
     shamsi_year_present = bool(SHAMSI_YEAR_PRESENT_RE.search(text))
+    text = _mask_full_dates(text)
+    candidates: list[tuple[int, int]] = []
     for match in NUMBER_RE.finditer(text):
         price, score = _score_price_candidate(text, match, vehicle_key, shamsi_year_present)
         if price is not None and score >= 15:
@@ -421,3 +527,20 @@ def parse_message(
     )
     ad.confidence = confidence_score(ad)
     return ad
+
+
+def parse_message_group(
+    source_message_id: str,
+    raw_text: str,
+    message_date: datetime | None = None,
+    source: str = "import",
+) -> list[ParsedAd]:
+    """پیام را (در صورت نیاز) به چند آگهی مستقل می‌شکند و هرکدام را پارس می‌کند.
+
+    همه‌ی آگهی‌های حاصل از یک پیام، همان source_message_id واقعی را دارند
+    (چون همه به یک پیام واقعی در تلگرام لینک می‌شوند)؛ تشخیص تکراری‌نبودن
+    آن‌ها در دیتابیس بر عهده‌ی UNIQUE(source_message_id, raw_text) است که
+    چون raw_text هر تکه فرق دارد، مشکلی پیش نمی‌آید.
+    """
+    blocks = split_multi_ad_blocks(raw_text)
+    return [parse_message(source_message_id, block, message_date, source) for block in blocks]

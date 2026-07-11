@@ -9,7 +9,7 @@ from telethon import Button, TelegramClient, events
 
 from .config import Settings
 from .net import parse_proxy_from_env, resolve_chat_id
-from .parser import parse_message
+from .parser import parse_message_group
 from .query import format_price
 from .storage import (
     add_user_vehicle,
@@ -247,13 +247,13 @@ async def run_bot() -> None:
         async def group_listener(event) -> None:
             if not event.message.message:
                 return
-            ad = parse_message(
+            ads = parse_message_group(
                 str(event.message.id),
                 event.message.message,
                 event.message.date,
                 source="live",
             )
-            save_ads(conn, [ad])
+            save_ads(conn, ads)
 
     # --- دستورات خصوصی ---
     @client.on(events.NewMessage(pattern=r"^/start$"))

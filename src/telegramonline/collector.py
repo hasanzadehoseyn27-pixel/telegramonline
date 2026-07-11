@@ -8,7 +8,7 @@ from telethon import TelegramClient, events
 
 from .config import Settings
 from .net import parse_proxy_from_env, resolve_chat_id
-from .parser import parse_message
+from .parser import parse_message_group
 from .storage import connect, save_ads
 
 
@@ -27,7 +27,7 @@ async def backfill(client: TelegramClient, group, db_path: str, days: int) -> in
             message_date = message_date.replace(tzinfo=timezone.utc)
         if message_date and message_date < cutoff:
             break
-        parsed.append(parse_message(str(message.id), message.message, message_date, source="live"))
+        parsed.extend(parse_message_group(str(message.id), message.message, message_date, source="live"))
         if len(parsed) >= 500:
             save_ads(conn, parsed)
             parsed.clear()
@@ -60,10 +60,11 @@ async def live_collect(days: int | None = None) -> None:
     async def handler(event) -> None:
         if not event.message.message:
             return
-        ad = parse_message(str(event.message.id), event.message.message, event.message.date, source="live")
-        save_ads(conn, [ad])
-        if ad.status == "sale" and ad.vehicle_name and ad.price_million:
-            print(f"{ad.vehicle_name}: {ad.price_million} million | confidence={ad.confidence}")
+        ads = parse_message_group(str(event.message.id), event.message.message, event.message.date, source="live")
+        save_ads(conn, ads)
+        for ad in ads:
+            if ad.status == "sale" and ad.vehicle_name and ad.price_million:
+                print(f"{ad.vehicle_name}: {ad.price_million} million | confidence={ad.confidence}")
 
     print("telegramonline collector is running.")
     await client.run_until_disconnected()
