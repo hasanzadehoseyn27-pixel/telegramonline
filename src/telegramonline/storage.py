@@ -226,7 +226,7 @@ def search_unpriced_ads(
             SELECT *,
                 ROW_NUMBER() OVER (
                     PARTITION BY dedup_key
-                    ORDER BY id DESC
+                    ORDER BY message_date IS NULL, message_date DESC, id DESC
                 ) AS rn
             FROM ads
             WHERE
@@ -236,7 +236,7 @@ def search_unpriced_ads(
         )
         SELECT * FROM matched
         WHERE rn = 1
-        ORDER BY id DESC
+        ORDER BY message_date IS NULL, message_date DESC, id DESC
         LIMIT ? OFFSET ?
         """,
         params_all,
@@ -262,7 +262,7 @@ def search_today_ads(
             SELECT *,
                 ROW_NUMBER() OVER (
                     PARTITION BY dedup_key
-                    ORDER BY id DESC
+                    ORDER BY message_date DESC, id DESC
                 ) AS rn
             FROM ads
             WHERE
@@ -273,7 +273,7 @@ def search_today_ads(
         )
         SELECT * FROM matched
         WHERE rn = 1
-        ORDER BY id DESC
+        ORDER BY message_date DESC, id DESC
         LIMIT ? OFFSET ?
         """,
         params_all,

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import re
 from datetime import datetime, timedelta, timezone
 from itertools import count
 
@@ -144,6 +145,30 @@ def format_posted_at(message_date_iso: str | None) -> str | None:
     return f"{jd.year}/{jd.month:02d}/{jd.day:02d} - {jd.hour:02d}:{jd.minute:02d}"
 
 
+BADGE_PATTERNS = [
+    (re.compile(r"خوش\s*قیمت"), "✨ خوش‌قیمت"),
+    (re.compile(r"زیر\s*قیمت|کف\s*قیمت"), "🔻 زیر قیمت"),
+    (re.compile(r"فوری"), "⚡ فوری"),
+    (re.compile(r"بدون\s*رنگ|بی\s*رنگ|بیرنگ"), "🛡 بدون رنگ"),
+]
+
+
+def format_mileage(value: int | None) -> str | None:
+    if not value:
+        return None
+    if value < 1000:
+        # فروشنده‌ها معمولاً «۵۰ تا کار» می‌نویسند یعنی ۵۰ هزار کیلومتر
+        return f"{value} هزار کیلومتر"
+    if value % 1000 == 0:
+        return f"{value // 1000} هزار کیلومتر"
+    return f"{value:,} کیلومتر".replace(",", "/")
+
+
+def detect_badges(normalized_text: str) -> list[str]:
+    """برچسب‌های جذاب از متن آگهی: خوش‌قیمت، فوری، زیر قیمت و..."""
+    return [badge for pattern, badge in BADGE_PATTERNS if pattern.search(normalized_text)]
+
+
 def format_ad_text(row, with_price: bool, index: int) -> str:
     fields = []
     if with_price:
@@ -153,12 +178,18 @@ def format_ad_text(row, with_price: bool, index: int) -> str:
         fields.append(f"📅 مدل {row['year']}{month_part}")
     if row["color"]:
         fields.append(f"🎨 {row['color']}")
+    mileage = format_mileage(row["mileage_km"])
+    if mileage:
+        fields.append(f"🛣 کارکرد {mileage}")
     if row["trim"]:
         fields.append(f"⚙️ {row['trim']}")
     if row["phone"]:
         fields.append(f"📞 {row['phone']}")
     line1 = f"{index}. " + (" | ".join(fields) if fields else "بدون جزئیات بیشتر")
     extra_lines = []
+    badges = detect_badges(row["normalized_text"])
+    if badges:
+        extra_lines.append(" ".join(badges))
     posted = format_posted_at(row["message_date"])
     if posted:
         extra_lines.append(f"🕓 ارسال: {posted}")
