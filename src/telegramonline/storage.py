@@ -10,14 +10,26 @@ from .normalizer import compact_text
 
 
 TABLE_SCHEMA = """
+CREATE TABLE IF NOT EXISTS channels (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    username TEXT NOT NULL UNIQUE,
+    title TEXT,
+    active INTEGER NOT NULL DEFAULT 1,
+    joined INTEGER NOT NULL DEFAULT 0,
+    added_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE IF NOT EXISTS ads (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+    channel_id INTEGER,
+    channel_username TEXT,
     source_message_id TEXT NOT NULL,
     raw_text TEXT NOT NULL,
     normalized_text TEXT NOT NULL,
     dedup_key TEXT NOT NULL DEFAULT '',
     source TEXT NOT NULL DEFAULT 'import',
     message_date TEXT,
+    day_key TEXT,
     vehicle_key TEXT,
     vehicle_name TEXT,
     trim TEXT,
@@ -31,7 +43,7 @@ CREATE TABLE IF NOT EXISTS ads (
     delivery TEXT,
     confidence REAL NOT NULL,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(source_message_id, raw_text)
+    UNIQUE(channel_id, source_message_id, raw_text)
 );
 
 CREATE TABLE IF NOT EXISTS user_vehicles (
@@ -47,6 +59,8 @@ CREATE INDEX IF NOT EXISTS idx_ads_vehicle_price ON ads(vehicle_key, price_milli
 CREATE INDEX IF NOT EXISTS idx_ads_status_date ON ads(status, message_date);
 CREATE INDEX IF NOT EXISTS idx_ads_status_price ON ads(status, price_million);
 CREATE INDEX IF NOT EXISTS idx_ads_dedup ON ads(dedup_key);
+CREATE INDEX IF NOT EXISTS idx_ads_day_key ON ads(day_key);
+CREATE INDEX IF NOT EXISTS idx_ads_channel ON ads(channel_id);
 """
 
 
@@ -62,24 +76,60 @@ def connect(db_path: str | Path) -> sqlite3.Connection:
 
 
 def _ensure_columns(conn: sqlite3.Connection) -> None:
-    """اگر دیتابیس قدیمی (بدون dedup_key/source) باز شود، ستون‌ها را اضافه می‌کند."""
+    """اگر دیتابیس قدیمی (بدون این ستون‌ها) باز شود، ستون‌ها را اضافه می‌کند."""
     existing = {row["name"] for row in conn.execute("PRAGMA table_info(ads)").fetchall()}
     if "dedup_key" not in existing:
         conn.execute("ALTER TABLE ads ADD COLUMN dedup_key TEXT NOT NULL DEFAULT ''")
     if "source" not in existing:
         conn.execute("ALTER TABLE ads ADD COLUMN source TEXT NOT NULL DEFAULT 'import'")
+    if "channel_id" not in existing:
+        conn.execute("ALTER TABLE ads ADD COLUMN channel_id INTEGER")
+    if "channel_username" not in existing:
+        conn.execute("ALTER TABLE ads ADD COLUMN channel_username TEXT")
+    if "day_key" not in existing:
+        conn.execute("ALTER TABLE ads ADD COLUMN day_key TEXT")
+    existing_channels_cols = set()
+    try:
+        existing_channels_cols = {
+            row["name"] for row in conn.execute("PRAGMA table_info(channels)").fetchall()
+        }
+    except sqlite3.OperationalError:
+        pass
+    if existing_channels_cols and "joined" not in existing_channels_cols:
+        conn.execute("ALTER TABLE channels ADD COLUMN joined INTEGER NOT NULL DEFAULT 0")
     conn.commit()
 
 
-def save_ads(conn: sqlite3.Connection, ads: Iterable[ParsedAd]) -> int:
+TEHRAN_OFFSET = timedelta(hours=3, minutes=30)
+
+
+def _compute_day_key(message_date: datetime | None) -> str | None:
+    """تاریخ روز (به‌وقت تهران) برای پیام، جهت فیلتر «فقط امروز» و پاک‌سازی شبانه."""
+    if message_date is None:
+        return None
+    if message_date.tzinfo is None:
+        message_date = message_date.replace(tzinfo=timezone.utc)
+    local = message_date.astimezone(timezone.utc) + TEHRAN_OFFSET
+    return local.strftime("%Y-%m-%d")
+
+
+def save_ads(
+    conn: sqlite3.Connection,
+    ads: Iterable[ParsedAd],
+    channel_id: int | None = None,
+    channel_username: str | None = None,
+) -> int:
     rows = [
         (
+            channel_id,
+            channel_username,
             ad.source_message_id,
             ad.raw_text,
             ad.normalized_text,
             ad.dedup_key,
             ad.source,
             ad.message_date.isoformat() if ad.message_date else None,
+            _compute_day_key(ad.message_date),
             ad.vehicle_key,
             ad.vehicle_name,
             ad.trim,
@@ -99,15 +149,153 @@ def save_ads(conn: sqlite3.Connection, ads: Iterable[ParsedAd]) -> int:
     conn.executemany(
         """
         INSERT OR IGNORE INTO ads (
-            source_message_id, raw_text, normalized_text, dedup_key, source, message_date,
+            channel_id, channel_username, source_message_id, raw_text, normalized_text,
+            dedup_key, source, message_date, day_key,
             vehicle_key, vehicle_name, trim, price_million, year, month, color, mileage_km,
             phone, status, delivery, confidence
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         rows,
     )
     conn.commit()
     return conn.total_changes - before
+
+
+# ---------------------------------------------------------------------------
+# مدیریت کانال‌ها
+# ---------------------------------------------------------------------------
+
+def _clean_username(raw: str) -> str:
+    """یوزرنیم کانال را از حالت‌های مختلف ورودی (لینک کامل، با @، بدون @) یکسان می‌کند."""
+    value = raw.strip()
+    for prefix in ("https://t.me/", "http://t.me/", "t.me/", "@"):
+        if value.lower().startswith(prefix):
+            value = value[len(prefix):]
+            break
+    return value.strip().rstrip("/")
+
+
+def add_channel(conn: sqlite3.Connection, username: str, title: str | None = None) -> int | None:
+    """کانال جدید اضافه می‌کند. اگر تکراری باشد None برمی‌گرداند."""
+    clean = _clean_username(username)
+    if not clean:
+        return None
+    try:
+        cursor = conn.execute(
+            "INSERT INTO channels (username, title) VALUES (?, ?)",
+            (clean, title),
+        )
+        conn.commit()
+        return cursor.lastrowid
+    except sqlite3.IntegrityError:
+        return None
+
+
+def delete_ads_by_channel_username(conn: sqlite3.Connection, username: str) -> int:
+    """پاک‌سازی دستی آگهی‌های یک یوزرنیم — برای کانال‌هایی که قبل از این اصلاح حذف شدند."""
+    clean = _clean_username(username)
+    before = conn.total_changes
+    conn.execute("DELETE FROM ads WHERE channel_username = ?", (clean,))
+    conn.commit()
+    return conn.total_changes - before
+
+
+def delete_ads_for_channel(conn: sqlite3.Connection, channel_id: int) -> int:
+    """همه آگهی‌های یک کانال را پاک می‌کند (وقتی کانال کامل حذف می‌شود)."""
+    before = conn.total_changes
+    conn.execute("DELETE FROM ads WHERE channel_id = ?", (channel_id,))
+    conn.commit()
+    return conn.total_changes - before
+
+
+def remove_channel(conn: sqlite3.Connection, channel_id: int) -> bool:
+    cursor = conn.execute("DELETE FROM channels WHERE id = ?", (channel_id,))
+    conn.commit()
+    return cursor.rowcount > 0
+
+
+def deactivate_channel(conn: sqlite3.Connection, channel_id: int) -> bool:
+    """کانال را برای حذف نشانه‌گذاری می‌کند.
+
+    حذف واقعی (هم از دیتابیس هم خروج از عضویت تلگرام) را collector.py با
+    اکانت شخصی انجام می‌دهد (چون فقط او می‌تواند LeaveChannelRequest بزند)؛
+    اینجا فقط active=0 می‌شود تا هندلر پیام زنده هم فوراً پردازشش را متوقف کند.
+    """
+    cursor = conn.execute("UPDATE channels SET active = 0 WHERE id = ?", (channel_id,))
+    conn.commit()
+    return cursor.rowcount > 0
+
+
+def list_channels_pending_leave(conn: sqlite3.Connection) -> list[sqlite3.Row]:
+    """کانال‌هایی که غیرفعال شده‌اند ولی اکانت هنوز واقعاً از آن‌ها خارج نشده."""
+    return conn.execute("SELECT * FROM channels WHERE active = 0 AND joined = 1").fetchall()
+
+
+def get_channel(conn: sqlite3.Connection, channel_id: int) -> sqlite3.Row | None:
+    return conn.execute("SELECT * FROM channels WHERE id = ?", (channel_id,)).fetchone()
+
+
+def get_channel_by_username(conn: sqlite3.Connection, username: str) -> sqlite3.Row | None:
+    clean = _clean_username(username)
+    return conn.execute("SELECT * FROM channels WHERE username = ?", (clean,)).fetchone()
+
+
+def list_unjoined_channels(conn: sqlite3.Connection) -> list[sqlite3.Row]:
+    """کانال‌هایی که فقط ثبت شده‌اند ولی هنوز اکانت تلگرام عضوشان نشده."""
+    return conn.execute(
+        "SELECT * FROM channels WHERE active = 1 AND joined = 0 ORDER BY added_at"
+    ).fetchall()
+
+
+def list_active_joined_channels(conn: sqlite3.Connection) -> list[sqlite3.Row]:
+    return conn.execute(
+        "SELECT * FROM channels WHERE active = 1 AND joined = 1 ORDER BY added_at"
+    ).fetchall()
+
+
+def mark_channel_joined(conn: sqlite3.Connection, channel_id: int, title: str | None = None) -> None:
+    conn.execute(
+        "UPDATE channels SET joined = 1, title = COALESCE(?, title) WHERE id = ?",
+        (title, channel_id),
+    )
+    conn.commit()
+
+
+def list_channels(conn: sqlite3.Connection, today_only: bool = True) -> list[dict]:
+    """لیست کانال‌ها همراه با تعداد پیام‌های امروزشان."""
+    today = _compute_day_key(datetime.now(timezone.utc))
+    channels = conn.execute("SELECT * FROM channels ORDER BY added_at").fetchall()
+    result = []
+    for ch in channels:
+        if today_only:
+            count_row = conn.execute(
+                "SELECT COUNT(*) AS c FROM ads WHERE channel_id = ? AND day_key = ?",
+                (ch["id"], today),
+            ).fetchone()
+        else:
+            count_row = conn.execute(
+                "SELECT COUNT(*) AS c FROM ads WHERE channel_id = ?",
+                (ch["id"],),
+            ).fetchone()
+        result.append(
+            {
+                "id": ch["id"],
+                "username": ch["username"],
+                "title": ch["title"],
+                "active": bool(ch["active"]),
+                "joined": bool(ch["joined"]),
+                "added_at": ch["added_at"],
+                "message_count": int(count_row["c"] or 0),
+            }
+        )
+    return result
+
+
+def total_messages_today(conn: sqlite3.Connection) -> int:
+    """مجموع پیام‌های امروز روی همه‌ی کانال‌ها (برای نمایش در لیست کانال‌ها)."""
+    today = _compute_day_key(datetime.now(timezone.utc))
+    row = conn.execute("SELECT COUNT(*) AS c FROM ads WHERE day_key = ?", (today,)).fetchone()
+    return int(row["c"] or 0)
 
 
 # ---------------------------------------------------------------------------
@@ -171,9 +359,25 @@ def _search_filters(query: str) -> tuple[str, list[object]]:
     return " AND ".join(conditions), params
 
 
-def _today_start_iso() -> str:
-    now = datetime.now(timezone.utc)
-    return now.replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+def purge_old_ads(conn: sqlite3.Connection) -> int:
+    """فقط امروز و دیروز نگه می‌دارد؛ هر چیز قدیمی‌تر (یا بدون تاریخ) حذف می‌شود.
+
+    قرار است هر شب حوالی نیمه‌شب به‌وقت تهران اجرا شود (توسط collector.py).
+    """
+    cutoff = yesterday_day_key()
+    before = conn.total_changes
+    conn.execute("DELETE FROM ads WHERE day_key IS NULL OR day_key < ?", (cutoff,))
+    conn.commit()
+    conn.execute("VACUUM")
+    return conn.total_changes - before
+
+
+def today_day_key() -> str:
+    return _compute_day_key(datetime.now(timezone.utc))
+
+
+def yesterday_day_key() -> str:
+    return _compute_day_key(datetime.now(timezone.utc) - timedelta(days=1))
 
 
 def search_priced_ads(
@@ -181,13 +385,16 @@ def search_priced_ads(
     query: str,
     limit: int = 10,
     offset: int = 0,
+    day_key: str | None = None,
 ) -> list[sqlite3.Row]:
-    """آگهی‌های ارزان‌تر (با قیمت) که متن‌شان شامل نام واردشده توسط کاربر است.
+    """آگهی‌های ارزان‌تر (با قیمت) همان روز که متن‌شان شامل نام واردشده است.
 
+    پیش‌فرض «امروز» است؛ برای گزارش دیروز می‌توان day_key را صریح داد.
     آگهی‌های با dedup_key یکسان (همان آگهی با فاصله‌گذاری متفاوت) فقط یک بار می‌آیند.
     """
+    day_key = day_key or today_day_key()
     like_where, params = _search_filters(query)
-    params_all = params + [limit, offset]
+    params_all = [day_key] + params + [limit, offset]
     return conn.execute(
         f"""
         WITH matched AS (
@@ -200,6 +407,7 @@ def search_priced_ads(
             WHERE
                 status = 'sale'
                 AND price_million IS NOT NULL
+                AND day_key = ?
                 AND {like_where}
         )
         SELECT * FROM matched
@@ -216,10 +424,12 @@ def search_unpriced_ads(
     query: str,
     limit: int = 10,
     offset: int = 0,
+    day_key: str | None = None,
 ) -> list[sqlite3.Row]:
-    """آگهی‌های فروش بدون قیمت که متن‌شان شامل نام واردشده است (جدیدترین اول)."""
+    """آگهی‌های فروش بدون قیمت همان روز که متن‌شان شامل نام واردشده است (جدیدترین اول)."""
+    day_key = day_key or today_day_key()
     like_where, params = _search_filters(query)
-    params_all = params + [limit, offset]
+    params_all = [day_key] + params + [limit, offset]
     return conn.execute(
         f"""
         WITH matched AS (
@@ -232,6 +442,7 @@ def search_unpriced_ads(
             WHERE
                 status = 'sale'
                 AND price_million IS NULL
+                AND day_key = ?
                 AND {like_where}
         )
         SELECT * FROM matched
@@ -248,40 +459,72 @@ def search_today_ads(
     query: str,
     limit: int = 10,
     offset: int = 0,
+    day_key: str | None = None,
 ) -> list[sqlite3.Row]:
-    """همه آگهی‌های امروز (با یا بدون قیمت) که متن‌شان شامل نام واردشده است.
-
-    فقط روی آگهی‌هایی کار می‌کند که message_date واقعی دارند (یعنی زنده از گروه
-    جمع شده‌اند، نه از فایل export قدیمی که تاریخ ندارد).
-    """
+    """همه آگهی‌های امروز (با یا بدون قیمت) که متن‌شان شامل نام واردشده است."""
+    day_key = day_key or today_day_key()
     like_where, params = _search_filters(query)
-    params_all = [_today_start_iso()] + params + [limit, offset]
+    params_all = [day_key] + params + [limit, offset]
     return conn.execute(
         f"""
         WITH matched AS (
             SELECT *,
                 ROW_NUMBER() OVER (
                     PARTITION BY dedup_key
-                    ORDER BY message_date DESC, id DESC
+                    ORDER BY message_date IS NULL, message_date DESC, id DESC
                 ) AS rn
             FROM ads
             WHERE
                 status = 'sale'
-                AND message_date IS NOT NULL
-                AND message_date >= ?
+                AND day_key = ?
                 AND {like_where}
         )
         SELECT * FROM matched
         WHERE rn = 1
-        ORDER BY message_date DESC, id DESC
+        ORDER BY message_date IS NULL, message_date DESC, id DESC
         LIMIT ? OFFSET ?
         """,
         params_all,
     ).fetchall()
 
 
-def count_search_results(conn: sqlite3.Connection, query: str) -> dict[str, int]:
-    """تعداد نتایج با‌قیمت/بدون‌قیمت/امروز برای نمایش روی دکمه‌ها."""
+def search_buyer_ads(
+    conn: sqlite3.Connection,
+    query: str,
+    limit: int = 10,
+    offset: int = 0,
+    day_key: str | None = None,
+) -> list[sqlite3.Row]:
+    """پیام‌های «خریدارم/دنبال ... هستم» همان روز که متن‌شان شامل نام واردشده است."""
+    day_key = day_key or today_day_key()
+    like_where, params = _search_filters(query)
+    params_all = [day_key] + params + [limit, offset]
+    return conn.execute(
+        f"""
+        WITH matched AS (
+            SELECT *,
+                ROW_NUMBER() OVER (
+                    PARTITION BY dedup_key
+                    ORDER BY message_date IS NULL, message_date DESC, id DESC
+                ) AS rn
+            FROM ads
+            WHERE
+                status = 'buyer'
+                AND day_key = ?
+                AND {like_where}
+        )
+        SELECT * FROM matched
+        WHERE rn = 1
+        ORDER BY message_date IS NULL, message_date DESC, id DESC
+        LIMIT ? OFFSET ?
+        """,
+        params_all,
+    ).fetchall()
+
+
+def count_search_results(conn: sqlite3.Connection, query: str, day_key: str | None = None) -> dict[str, int]:
+    """تعداد نتایج با‌قیمت/بدون‌قیمت/امروز/خریدار (همه محدود به همان روز) برای دکمه‌ها."""
+    day_key = day_key or today_day_key()
     like_where, params = _search_filters(query)
     row = conn.execute(
         f"""
@@ -289,22 +532,31 @@ def count_search_results(conn: sqlite3.Connection, query: str) -> dict[str, int]
             COUNT(DISTINCT CASE WHEN price_million IS NOT NULL THEN dedup_key END) AS priced,
             COUNT(DISTINCT CASE WHEN price_million IS NULL THEN dedup_key END) AS unpriced
         FROM ads
-        WHERE status = 'sale' AND {like_where}
+        WHERE status = 'sale' AND day_key = ? AND {like_where}
         """,
-        params,
+        [day_key] + params,
     ).fetchone()
     today_row = conn.execute(
         f"""
         SELECT COUNT(DISTINCT dedup_key) AS today
         FROM ads
-        WHERE status = 'sale' AND message_date IS NOT NULL AND message_date >= ? AND {like_where}
+        WHERE status = 'sale' AND day_key = ? AND {like_where}
         """,
-        [_today_start_iso()] + params,
+        [day_key] + params,
+    ).fetchone()
+    buyer_row = conn.execute(
+        f"""
+        SELECT COUNT(DISTINCT dedup_key) AS buyers
+        FROM ads
+        WHERE status = 'buyer' AND day_key = ? AND {like_where}
+        """,
+        [day_key] + params,
     ).fetchone()
     return {
         "priced": int(row["priced"] or 0),
         "unpriced": int(row["unpriced"] or 0),
         "today": int(today_row["today"] or 0),
+        "buyers": int(buyer_row["buyers"] or 0),
     }
 
 
