@@ -54,8 +54,8 @@ TRANSLATION_TABLE = str.maketrans(
 def normalize_text(text: str) -> str:
     text = text.translate(TRANSLATION_TABLE)
     text = re.sub(r"\s*([./,])\s*", r"\1", text)
-    text = re.sub(r"(?<!\d)([1-9])\s+(\d{3})\s+000\s+000(?!\d)", r"\1/\2/000", text)
-    text = re.sub(r"(?<!\d)([1-9])\s+(\d{3})(?!\d)", r"\1/\2", text)
+    text = re.sub(r"(?<!\d)([1-9])[ \t]+(\d{3})[ \t]+000[ \t]+000(?!\d)", r"\1/\2/000", text)
+    text = re.sub(r"(?<!\d)([1-9])[ \t]+(\d{3})(?!\d)", r"\1/\2", text)
     text = _LETTER_CODE_RE.sub(_replace_letter_code, text)
     text = re.sub(r"[ \t]+", " ", text)
     text = re.sub(r"\n{3,}", "\n\n", text)

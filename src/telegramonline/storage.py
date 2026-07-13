@@ -372,12 +372,70 @@ def purge_old_ads(conn: sqlite3.Connection) -> int:
     return conn.total_changes - before
 
 
+def cheapest_by_vehicle(conn: sqlite3.Connection, day_key: str | None = None) -> list[sqlite3.Row]:
+    """ارزان‌ترین آگهی هر مدل خودرو (بر اساس vehicle_key) در یک روز مشخص.
+
+    فقط مدل‌هایی که پارسر تشخیص داده (vehicle_key ست شده) در گزارش می‌آیند؛
+    آگهی‌های بدون مدل مشخص (که تعدادشان کم نیست) در این گزارش نمی‌آیند.
+    """
+    day_key = day_key or today_day_key()
+    return conn.execute(
+        """
+        WITH ranked AS (
+            SELECT *,
+                ROW_NUMBER() OVER (
+                    PARTITION BY vehicle_key
+                    ORDER BY price_million ASC, id DESC
+                ) AS rn
+            FROM ads
+            WHERE
+                status = 'sale'
+                AND price_million IS NOT NULL
+                AND vehicle_key IS NOT NULL
+                AND day_key = ?
+        )
+        SELECT * FROM ranked
+        WHERE rn = 1
+        ORDER BY vehicle_name COLLATE NOCASE
+        """,
+        (day_key,),
+    ).fetchall()
+
+
 def today_day_key() -> str:
     return _compute_day_key(datetime.now(timezone.utc))
 
 
 def yesterday_day_key() -> str:
     return _compute_day_key(datetime.now(timezone.utc) - timedelta(days=1))
+
+
+def cheapest_per_vehicle_report(conn: sqlite3.Connection, day_key: str | None = None) -> list[sqlite3.Row]:
+    """کمترین قیمت هر مدل خودرو (شناخته‌شده) برای یک روز — پایه‌ی گزارش اکسل.
+
+    فقط روی خودروهایی کار می‌کند که vehicle_key تشخیص داده شده (لیست الگوهای
+    شناخته‌شده در parser.py)، تا گزارش شامل «هر مدل مشخص» باشد، نه هر متن آزاد.
+    """
+    day_key = day_key or today_day_key()
+    return conn.execute(
+        """
+        WITH ranked AS (
+            SELECT *,
+                ROW_NUMBER() OVER (
+                    PARTITION BY vehicle_key
+                    ORDER BY price_million ASC, id DESC
+                ) AS rn
+            FROM ads
+            WHERE
+                status = 'sale'
+                AND vehicle_key IS NOT NULL
+                AND price_million IS NOT NULL
+                AND day_key = ?
+        )
+        SELECT * FROM ranked WHERE rn = 1 ORDER BY vehicle_name
+        """,
+        (day_key,),
+    ).fetchall()
 
 
 def search_priced_ads(

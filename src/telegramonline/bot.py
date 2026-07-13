@@ -1,12 +1,16 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import re
+import tempfile
 from datetime import datetime, timedelta, timezone
 from itertools import count
 
 import jdatetime
+from openpyxl import Workbook
 from telethon import Button, TelegramClient, events
+from telethon.errors import MessageNotModifiedError
 
 from .config import Settings
 from .net import parse_proxy_from_env
@@ -14,6 +18,7 @@ from .query import format_price
 from .storage import (
     add_channel,
     add_user_vehicle,
+    cheapest_per_vehicle_report,
     connect,
     count_search_results,
     deactivate_channel,
@@ -27,6 +32,8 @@ from .storage import (
     search_today_ads,
     search_unpriced_ads,
     stats,
+    today_day_key,
+    yesterday_day_key,
 )
 
 # توجه: قبلاً اینجا یک یوزرنیم ثابت برای همه‌ی لینک‌ها بود، ولی چون از الان
@@ -79,6 +86,7 @@ def main_buttons() -> list[list[Button]]:
         [Button.inline("🚘 لیست ماشین‌های من", b"myveh")],
         [Button.inline("➕ افزودن ماشین", b"addveh"), Button.inline("🗑 حذف ماشین", b"delmenu")],
         [Button.inline("📡 کانال‌ها", b"chlist"), Button.inline("📊 آمار دیتابیس", b"stats")],
+        [Button.inline("📥 گزارش امروز", b"report:today"), Button.inline("📥 گزارش دیروز", b"report:yesterday")],
         [Button.inline("🏠 صفحه اصلی", b"home")],
     ]
 
@@ -330,6 +338,50 @@ async def send_buyers_tab(event, conn, kind: str, ref: int, name: str, offset: i
     await event.respond("ادامه:", buttons=control_buttons(kind, ref, counts, active="buyers", offset=offset))
 
 
+async def safe_edit(event, text: str, buttons=None) -> None:
+    """مثل event.edit ولی وقتی محتوا دقیقاً همان قبلی است (کلیک دوباره روی
+    «تازه‌سازی» یا دکمه‌ای که چیزی عوض نکرده) کرش نمی‌کند؛ تلگرام برای ادیت
+    به محتوای عیناً یکسان ارور MessageNotModifiedError می‌دهد که اینجا
+    بی‌خطر نادیده گرفته می‌شود.
+    """
+    try:
+        await event.edit(text, buttons=buttons)
+    except MessageNotModifiedError:
+        await event.answer()
+
+
+def build_excel_report(conn, day_key: str, label: str) -> str:
+    """گزارش کمترین قیمت هر مدل را برای یک روز به‌صورت فایل اکسل می‌سازد و مسیرش را برمی‌گرداند."""
+    rows = cheapest_per_vehicle_report(conn, day_key=day_key)
+    wb = Workbook()
+    ws = wb.active
+    ws.title = label[:31]
+    ws.sheet_view.rightToLeft = True
+    headers = ["ماشین", "کمترین قیمت (میلیون)", "مدل", "برج", "رنگ", "تماس", "ارسال", "لینک تلگرام"]
+    ws.append(headers)
+    for row in rows:
+        posted = format_posted_at(row["message_date"]) or ""
+        ws.append(
+            [
+                row["vehicle_name"],
+                row["price_million"],
+                row["year"] or "",
+                row["month"] or "",
+                row["color"] or "",
+                row["phone"] or "",
+                posted,
+                message_link(row) or "",
+            ]
+        )
+    for column_cells in ws.columns:
+        length = max((len(str(c.value)) for c in column_cells if c.value is not None), default=10)
+        ws.column_dimensions[column_cells[0].column_letter].width = min(max(length + 2, 10), 45)
+    fd, path = tempfile.mkstemp(suffix=".xlsx", prefix=f"report_{day_key}_")
+    os.close(fd)
+    wb.save(path)
+    return path
+
+
 async def run_bot() -> None:
     settings = Settings.from_env()
     if not settings.bot_token:
@@ -408,7 +460,7 @@ async def run_bot() -> None:
             _pending_add.discard(event.sender_id)
             _pending_add_channel.discard(event.sender_id)
             _pending_remove_channel.discard(event.sender_id)
-            await event.edit(WELCOME, buttons=main_buttons())
+            await safe_edit(event, WELCOME, buttons=main_buttons())
             return
         if head == "stats":
             s = stats(conn)
@@ -423,25 +475,40 @@ async def run_bot() -> None:
                 f"تبلیغ/نامعتبر: {s['spam']}\n"
                 f"ماشین‌های ذخیره‌شده: {s['saved_vehicles']}"
             )
-            await event.edit(text, buttons=main_buttons())
+            await safe_edit(event, text, buttons=main_buttons())
+            return
+        if head == "report":
+            day_choice = parts[1] if len(parts) > 1 else "today"
+            day_key = today_day_key() if day_choice == "today" else yesterday_day_key()
+            label = "امروز" if day_choice == "today" else "دیروز"
+            rows = cheapest_per_vehicle_report(conn, day_key=day_key)
+            if not rows:
+                await event.answer(f"برای {label} هنوز داده‌ای برای گزارش نیست.", alert=True)
+                return
+            await event.answer()
+            path = build_excel_report(conn, day_key, label)
+            try:
+                await event.respond(file=path, message=f"📊 گزارش کمترین قیمت هر مدل — {label} ({len(rows)} مدل)")
+            finally:
+                os.remove(path)
             return
         if head == "myveh":
             vehicles = list_user_vehicles(conn)
             if not vehicles:
-                await event.edit("لیست ماشین‌هایت خالی است.\nبا «➕ افزودن ماشین» اسم ماشین را اضافه کن.", buttons=main_buttons())
+                await safe_edit(event, "لیست ماشین‌هایت خالی است.\nبا «➕ افزودن ماشین» اسم ماشین را اضافه کن.", buttons=main_buttons())
                 return
-            await event.edit(f"🚘 ماشین‌های تو ({len(vehicles)} مورد):", buttons=my_vehicles_buttons(conn))
+            await safe_edit(event, f"🚘 ماشین‌های تو ({len(vehicles)} مورد):", buttons=my_vehicles_buttons(conn))
             return
         if head == "addveh":
             _pending_add.add(event.sender_id)
-            await event.edit("✍️ اسم ماشین را بفرست (مثلاً: پراید یا کوییک).", buttons=[[Button.inline("انصراف", b"home")]])
+            await safe_edit(event, "✍️ اسم ماشین را بفرست (مثلاً: پراید یا کوییک).", buttons=[[Button.inline("انصراف", b"home")]])
             return
         if head == "delmenu":
             vehicles = list_user_vehicles(conn)
             if not vehicles:
-                await event.edit("لیست خالی است؛ چیزی برای حذف نیست.", buttons=main_buttons())
+                await safe_edit(event, "لیست خالی است؛ چیزی برای حذف نیست.", buttons=main_buttons())
                 return
-            await event.edit("روی هر ماشین بزنی حذف می‌شود:", buttons=delete_menu_buttons(conn))
+            await safe_edit(event, "روی هر ماشین بزنی حذف می‌شود:", buttons=delete_menu_buttons(conn))
             return
         if head == "del":
             vehicle_id = int(parts[1])
@@ -450,24 +517,24 @@ async def run_bot() -> None:
             name = vehicle["name"] if vehicle else "?"
             note = f"🗑 «{name}» حذف شد." if removed else "این مورد قبلاً حذف شده."
             vehicles = list_user_vehicles(conn)
-            await event.edit(note, buttons=delete_menu_buttons(conn) if vehicles else main_buttons())
+            await safe_edit(event, note, buttons=delete_menu_buttons(conn) if vehicles else main_buttons())
             return
 
         if head == "chlist":
             _pending_add_channel.discard(event.sender_id)
             _pending_remove_channel.discard(event.sender_id)
-            await event.edit(channel_list_text(conn), buttons=channel_buttons(conn))
+            await safe_edit(event, channel_list_text(conn), buttons=channel_buttons(conn))
             return
         if head == "addch":
             _pending_add_channel.add(event.sender_id)
-            await event.edit(
+            await safe_edit(event, 
                 "✍️ یوزرنیم کانال عمومی را بفرست (مثلاً: khodro_tirgham یا لینک کامل t.me/...).",
                 buttons=[[Button.inline("انصراف", b"chlist")]],
             )
             return
         if head == "delchtxt":
             _pending_remove_channel.add(event.sender_id)
-            await event.edit(
+            await safe_edit(event, 
                 "✍️ یوزرنیم کانالی که می‌خوای حذف شود را بفرست.",
                 buttons=[[Button.inline("انصراف", b"chlist")]],
             )
@@ -476,7 +543,7 @@ async def run_bot() -> None:
             channel_id = int(parts[1])
             deactivated = deactivate_channel(conn, channel_id)
             note = "🗑 کانال غیرفعال شد؛ ظرف چند لحظه اکانت از آن خارج می‌شود." if deactivated else "این کانال قبلاً حذف شده."
-            await event.edit(note + "\n\n" + channel_list_text(conn), buttons=channel_buttons(conn))
+            await safe_edit(event, note + "\n\n" + channel_list_text(conn), buttons=channel_buttons(conn))
             return
 
         if head == "veh":
