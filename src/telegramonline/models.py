@@ -24,3 +24,14 @@ class ParsedAd:
     status: str
     delivery: str | None
     confidence: float
+
+@dataclass(slots=True)
+class PriceAlert:
+    id: int | None
+    user_id: int
+    vehicle_key: str
+    vehicle_name: str | None
+    condition: str
+    min_price: int | None
+    max_price: int | None
+    active: bool

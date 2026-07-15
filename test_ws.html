@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html>
+  <body>
+    <h3>WebSocket Test</h3>
+
+    <script>
+      const ws = new WebSocket("ws://127.0.0.1:8000/ws");
+
+      ws.onopen = () => {
+        console.log("connected");
+        ws.send("hello");
+      };
+
+      ws.onmessage = (event) => {
+        console.log(event.data);
+      };
+    </script>
+  </body>
+</html>

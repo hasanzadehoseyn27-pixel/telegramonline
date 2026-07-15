@@ -1,0 +1,170 @@
+@import url("https://fonts.googleapis.com/css2?family=Noto+Sans+Arabic:wght@300;400;500;600;700;800;900&family=Vazirmatn:wght@300;400;500;600;700;800;900&display=swap");
+@import "tailwindcss";
+
+:root {
+  direction: rtl;
+  font-family: "Noto Sans Arabic", "Vazirmatn", "Yekan Bakh", "IRANSansX", ui-sans-serif, system-ui, sans-serif;
+  color-scheme: dark;
+  --page-bg: #020617;
+  --text-primary: #ffffff;
+  --text-muted: #94a3b8;
+  --panel-bg: rgba(15, 23, 42, 0.66);
+  --panel-border: rgba(255, 255, 255, 0.1);
+  --field-bg: rgba(2, 6, 23, 0.7);
+}
+
+:root.light-theme {
+  color-scheme: light;
+  --page-bg: #eef6fb;
+  --text-primary: #0f172a;
+  --text-muted: #475569;
+  --panel-bg: rgba(255, 255, 255, 0.72);
+  --panel-border: rgba(15, 23, 42, 0.12);
+  --field-bg: rgba(255, 255, 255, 0.78);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+}
+
+body {
+  background:
+    linear-gradient(135deg, rgba(6, 182, 212, 0.13), transparent 34%),
+    linear-gradient(225deg, rgba(244, 63, 94, 0.1), transparent 32%),
+    var(--page-bg);
+  color: var(--text-primary);
+  font-feature-settings: "ss01";
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+@keyframes glowPulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 rgba(34, 211, 238, 0);
+    transform: translateY(0) scale(1);
+  }
+  50% {
+    box-shadow: 0 0 34px rgba(34, 211, 238, 0.28);
+    transform: translateY(-2px) scale(1.01);
+  }
+}
+
+@keyframes alertShake {
+  0%,
+  100% {
+    transform: rotate(0deg);
+  }
+  20% {
+    transform: rotate(12deg);
+  }
+  40% {
+    transform: rotate(-12deg);
+  }
+  60% {
+    transform: rotate(8deg);
+  }
+  80% {
+    transform: rotate(-8deg);
+  }
+}
+
+@keyframes softBlink {
+  0%,
+  100% {
+    border-color: rgba(255, 255, 255, 0.1);
+  }
+  50% {
+    border-color: rgba(34, 211, 238, 0.7);
+  }
+}
+
+.glass-panel {
+  border: 1px solid var(--panel-border);
+  background: var(--panel-bg);
+  box-shadow: 0 24px 80px rgba(2, 6, 23, 0.24);
+  backdrop-filter: blur(18px);
+}
+
+.light-theme .glass-panel {
+  box-shadow: 0 20px 60px rgba(15, 23, 42, 0.09);
+}
+
+.light-theme .theme-surface {
+  background: rgba(255, 255, 255, 0.62);
+  color: #0f172a;
+}
+
+.light-theme .theme-muted {
+  color: #475569;
+}
+
+.light-theme .theme-field {
+  background: var(--field-bg);
+  color: #0f172a;
+}
+
+.light-theme .bg-slate-950,
+.light-theme .bg-slate-950\/70,
+.light-theme .bg-slate-950\/95 {
+  background-color: rgba(255, 255, 255, 0.72) !important;
+}
+
+.light-theme .bg-white {
+  background-color: #0f172a !important;
+  color: #ffffff !important;
+}
+
+.light-theme .text-white,
+.light-theme .text-slate-200,
+.light-theme .text-slate-300 {
+  color: #0f172a !important;
+}
+
+.light-theme .text-slate-400,
+.light-theme .text-slate-500 {
+  color: #64748b !important;
+}
+
+.light-theme input,
+.light-theme select,
+.light-theme textarea {
+  color: #0f172a;
+}
+
+.scroll-area {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(34, 211, 238, 0.45) rgba(15, 23, 42, 0.5);
+}
+
+.scroll-area::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.scroll-area::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(34, 211, 238, 0.45);
+}
+
+.scroll-area::-webkit-scrollbar-track {
+  background: rgba(15, 23, 42, 0.5);
+}

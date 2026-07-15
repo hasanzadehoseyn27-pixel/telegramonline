@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import sqlite3
+
+import jdatetime
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Iterable
 
 from .models import ParsedAd
 from .normalizer import compact_text
+from .parser import known_vehicle_options
 
 
 TABLE_SCHEMA = """
@@ -16,6 +19,16 @@ CREATE TABLE IF NOT EXISTS channels (
     title TEXT,
     active INTEGER NOT NULL DEFAULT 1,
     joined INTEGER NOT NULL DEFAULT 0,
+    added_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS source_groups (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    username TEXT NOT NULL UNIQUE,
+    title TEXT,
+    active INTEGER NOT NULL DEFAULT 1,
+    joined INTEGER NOT NULL DEFAULT 0,
+    discovered_channels INTEGER NOT NULL DEFAULT 0,
     added_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -52,17 +65,74 @@ CREATE TABLE IF NOT EXISTS user_vehicles (
     normalized_name TEXT NOT NULL UNIQUE,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE TABLE IF NOT EXISTS price_alerts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+    user_id INTEGER NOT NULL,
+
+    vehicle_key TEXT NOT NULL,
+    vehicle_name TEXT,
+
+    condition TEXT NOT NULL,
+
+    min_price INTEGER,
+    max_price INTEGER,
+
+    active INTEGER NOT NULL DEFAULT 1,
+
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS alert_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+    alert_id INTEGER NOT NULL,
+
+    ad_id INTEGER NOT NULL,
+
+    vehicle_key TEXT,
+
+    price_million INTEGER,
+
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    UNIQUE(alert_id, ad_id)
+);
 """
+
 
 INDEX_SCHEMA = """
-CREATE INDEX IF NOT EXISTS idx_ads_vehicle_price ON ads(vehicle_key, price_million);
-CREATE INDEX IF NOT EXISTS idx_ads_status_date ON ads(status, message_date);
-CREATE INDEX IF NOT EXISTS idx_ads_status_price ON ads(status, price_million);
-CREATE INDEX IF NOT EXISTS idx_ads_dedup ON ads(dedup_key);
-CREATE INDEX IF NOT EXISTS idx_ads_day_key ON ads(day_key);
-CREATE INDEX IF NOT EXISTS idx_ads_channel ON ads(channel_id);
-"""
+CREATE INDEX IF NOT EXISTS idx_ads_vehicle_price
+ON ads(vehicle_key, price_million);
 
+CREATE INDEX IF NOT EXISTS idx_ads_status_date
+ON ads(status, message_date);
+
+CREATE INDEX IF NOT EXISTS idx_ads_status_price
+ON ads(status, price_million);
+
+CREATE INDEX IF NOT EXISTS idx_ads_dedup
+ON ads(dedup_key);
+
+CREATE INDEX IF NOT EXISTS idx_ads_day_key
+ON ads(day_key);
+
+CREATE INDEX IF NOT EXISTS idx_ads_channel
+ON ads(channel_id);
+
+CREATE INDEX IF NOT EXISTS idx_price_alert_vehicle
+ON price_alerts(vehicle_key);
+
+CREATE INDEX IF NOT EXISTS idx_price_alert_active
+ON price_alerts(active);
+
+CREATE INDEX IF NOT EXISTS idx_alert_events_alert
+ON alert_events(alert_id);
+
+CREATE INDEX IF NOT EXISTS idx_alert_events_ad
+ON alert_events(ad_id);
+"""
 
 def connect(db_path: str | Path) -> sqlite3.Connection:
     path = Path(db_path)
@@ -97,6 +167,17 @@ def _ensure_columns(conn: sqlite3.Connection) -> None:
         pass
     if existing_channels_cols and "joined" not in existing_channels_cols:
         conn.execute("ALTER TABLE channels ADD COLUMN joined INTEGER NOT NULL DEFAULT 0")
+    existing_groups_cols = set()
+    try:
+        existing_groups_cols = {
+            row["name"] for row in conn.execute("PRAGMA table_info(source_groups)").fetchall()
+        }
+    except sqlite3.OperationalError:
+        pass
+    if existing_groups_cols and "joined" not in existing_groups_cols:
+        conn.execute("ALTER TABLE source_groups ADD COLUMN joined INTEGER NOT NULL DEFAULT 0")
+    if existing_groups_cols and "discovered_channels" not in existing_groups_cols:
+        conn.execute("ALTER TABLE source_groups ADD COLUMN discovered_channels INTEGER NOT NULL DEFAULT 0")
     conn.commit()
 
 
@@ -113,52 +194,146 @@ def _compute_day_key(message_date: datetime | None) -> str | None:
     return local.strftime("%Y-%m-%d")
 
 
+
+
+def format_shamsi_datetime(
+    message_date: str | datetime | None,
+) -> str | None:
+    """
+    تبدیل تاریخ پیام به تاریخ و ساعت شمسی قابل نمایش در سایت.
+
+    خروجی:
+    ۱۴۰۵/۰۴/۲۴ - ۱۴:۴۳
+    """
+
+    if not message_date:
+        return None
+
+    try:
+        if isinstance(message_date, str):
+            dt = datetime.fromisoformat(
+                message_date.replace("Z", "+00:00")
+            )
+        else:
+            dt = message_date
+
+        if dt.tzinfo is None:
+            dt = dt.replace(
+                tzinfo=timezone.utc
+            )
+
+        local = (
+            dt.astimezone(timezone.utc)
+            + TEHRAN_OFFSET
+        )
+
+        jalali = jdatetime.datetime.fromgregorian(
+            datetime=local.replace(tzinfo=None)
+        )
+
+        return (
+            f"{jalali.year:04d}/"
+            f"{jalali.month:02d}/"
+            f"{jalali.day:02d}"
+            f" - "
+            f"{jalali.hour:02d}:"
+            f"{jalali.minute:02d}"
+        )
+
+    except Exception:
+        return None
+
+
 def save_ads(
     conn: sqlite3.Connection,
     ads: Iterable[ParsedAd],
     channel_id: int | None = None,
     channel_username: str | None = None,
-) -> int:
-    rows = [
-        (
-            channel_id,
-            channel_username,
-            ad.source_message_id,
-            ad.raw_text,
-            ad.normalized_text,
-            ad.dedup_key,
-            ad.source,
-            ad.message_date.isoformat() if ad.message_date else None,
-            _compute_day_key(ad.message_date),
-            ad.vehicle_key,
-            ad.vehicle_name,
-            ad.trim,
-            ad.price_million,
-            ad.year,
-            ad.month,
-            ad.color,
-            ad.mileage_km,
-            ad.phone,
-            ad.status,
-            ad.delivery,
-            ad.confidence,
+) -> list[sqlite3.Row]:
+    """
+    ذخیره آگهی‌ها و برگرداندن آگهی‌های تازه ذخیره‌شده با id واقعی دیتابیس.
+
+    این id برای سیستم هشدار قیمت لازم است تا alert_events
+    دقیقاً به رکورد ads وصل شود.
+    """
+
+    saved_ads: list[sqlite3.Row] = []
+
+    for ad in ads:
+
+        cursor = conn.execute(
+            """
+            INSERT OR IGNORE INTO ads (
+                channel_id,
+                channel_username,
+                source_message_id,
+                raw_text,
+                normalized_text,
+                dedup_key,
+                source,
+                message_date,
+                day_key,
+                vehicle_key,
+                vehicle_name,
+                trim,
+                price_million,
+                year,
+                month,
+                color,
+                mileage_km,
+                phone,
+                status,
+                delivery,
+                confidence
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                channel_id,
+                channel_username,
+                ad.source_message_id,
+                ad.raw_text,
+                ad.normalized_text,
+                ad.dedup_key,
+                ad.source,
+                ad.message_date.isoformat()
+                if ad.message_date
+                else None,
+                _compute_day_key(ad.message_date),
+                ad.vehicle_key,
+                ad.vehicle_name,
+                ad.trim,
+                ad.price_million,
+                ad.year,
+                ad.month,
+                ad.color,
+                ad.mileage_km,
+                ad.phone,
+                ad.status,
+                ad.delivery,
+                ad.confidence,
+            ),
         )
-        for ad in ads
-    ]
-    before = conn.total_changes
-    conn.executemany(
-        """
-        INSERT OR IGNORE INTO ads (
-            channel_id, channel_username, source_message_id, raw_text, normalized_text,
-            dedup_key, source, message_date, day_key,
-            vehicle_key, vehicle_name, trim, price_million, year, month, color, mileage_km,
-            phone, status, delivery, confidence
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """,
-        rows,
-    )
-    conn.commit()
-    return conn.total_changes - before
+
+        conn.commit()
+
+
+        # اگر آگهی جدید واقعاً ذخیره شد
+        if cursor.rowcount > 0:
+
+            row = conn.execute(
+                """
+                SELECT *
+                FROM ads
+                WHERE rowid = last_insert_rowid()
+                """
+            ).fetchone()
+
+            if row:
+                saved_ads.append(row)
+
+
+    return saved_ads
 
 
 # ---------------------------------------------------------------------------
@@ -168,7 +343,15 @@ def save_ads(
 def _clean_username(raw: str) -> str:
     """یوزرنیم کانال را از حالت‌های مختلف ورودی (لینک کامل، با @، بدون @) یکسان می‌کند."""
     value = raw.strip()
-    for prefix in ("https://t.me/", "http://t.me/", "t.me/", "@"):
+    for prefix in (
+    "https://t.me/",
+    "http://t.me/",
+    "t.me/",
+    "https://telegram.me/",
+    "http://telegram.me/",
+    "telegram.me/",
+    "@",
+):
         if value.lower().startswith(prefix):
             value = value[len(prefix):]
             break
@@ -180,6 +363,98 @@ def add_channel(conn: sqlite3.Connection, username: str, title: str | None = Non
     clean = _clean_username(username)
     if not clean:
         return None
+
+
+def add_source_group(conn: sqlite3.Connection, username: str, title: str | None = None) -> int | None:
+    clean = _clean_username(username)
+    if not clean:
+        return None
+    try:
+        cursor = conn.execute(
+            "INSERT INTO source_groups (username, title) VALUES (?, ?)",
+            (clean, title),
+        )
+        conn.commit()
+        return cursor.lastrowid
+    except sqlite3.IntegrityError:
+        row = conn.execute("SELECT id FROM source_groups WHERE username = ?", (clean,)).fetchone()
+        if row:
+            conn.execute("UPDATE source_groups SET active = 1 WHERE id = ?", (row["id"],))
+            conn.commit()
+            return row["id"]
+        return None
+
+
+def get_source_group(conn: sqlite3.Connection, group_id: int) -> sqlite3.Row | None:
+    return conn.execute("SELECT * FROM source_groups WHERE id = ?", (group_id,)).fetchone()
+
+
+def get_source_group_by_username(conn: sqlite3.Connection, username: str) -> sqlite3.Row | None:
+    clean = _clean_username(username)
+    return conn.execute("SELECT * FROM source_groups WHERE username = ?", (clean,)).fetchone()
+
+
+def deactivate_source_group(conn: sqlite3.Connection, group_id: int) -> bool:
+    cursor = conn.execute("UPDATE source_groups SET active = 0 WHERE id = ?", (group_id,))
+    conn.commit()
+    return cursor.rowcount > 0
+
+
+def remove_source_group(conn: sqlite3.Connection, group_id: int) -> bool:
+    cursor = conn.execute("DELETE FROM source_groups WHERE id = ?", (group_id,))
+    conn.commit()
+    return cursor.rowcount > 0
+
+
+def list_unjoined_source_groups(conn: sqlite3.Connection) -> list[sqlite3.Row]:
+    return conn.execute(
+        "SELECT * FROM source_groups WHERE active = 1 AND joined = 0 ORDER BY added_at"
+    ).fetchall()
+
+
+def list_source_groups_pending_leave(conn: sqlite3.Connection) -> list[sqlite3.Row]:
+    return conn.execute(
+        "SELECT * FROM source_groups WHERE active = 0 AND joined = 1 ORDER BY added_at"
+    ).fetchall()
+
+
+def list_active_joined_source_groups(conn: sqlite3.Connection) -> list[sqlite3.Row]:
+    return conn.execute(
+        "SELECT * FROM source_groups WHERE active = 1 AND joined = 1 ORDER BY added_at"
+    ).fetchall()
+
+
+def mark_source_group_joined(conn: sqlite3.Connection, group_id: int, title: str | None = None) -> None:
+    conn.execute(
+        "UPDATE source_groups SET joined = 1, title = COALESCE(?, title) WHERE id = ?",
+        (title, group_id),
+    )
+    conn.commit()
+
+
+def increment_source_group_discovered(conn: sqlite3.Connection, username: str) -> None:
+    clean = _clean_username(username)
+    conn.execute(
+        "UPDATE source_groups SET discovered_channels = discovered_channels + 1 WHERE username = ?",
+        (clean,),
+    )
+    conn.commit()
+
+
+def list_source_groups(conn: sqlite3.Connection) -> list[dict]:
+    rows = conn.execute("SELECT * FROM source_groups ORDER BY added_at DESC").fetchall()
+    return [
+        {
+            "id": row["id"],
+            "username": row["username"],
+            "title": row["title"],
+            "active": bool(row["active"]),
+            "joined": bool(row["joined"]),
+            "discovered_channels": int(row["discovered_channels"] or 0),
+            "added_at": row["added_at"],
+        }
+        for row in rows
+    ]
     try:
         cursor = conn.execute(
             "INSERT INTO channels (username, title) VALUES (?, ?)",
@@ -297,6 +572,98 @@ def total_messages_today(conn: sqlite3.Connection) -> int:
     row = conn.execute("SELECT COUNT(*) AS c FROM ads WHERE day_key = ?", (today,)).fetchone()
     return int(row["c"] or 0)
 
+def get_live_channel_stats(
+    conn: sqlite3.Connection,
+) -> dict:
+    """
+    آمار لحظه‌ای کانال‌ها برای داشبورد سایت.
+    """
+
+    today = today_day_key()
+
+
+    channels = conn.execute(
+        """
+        SELECT
+            id,
+            username,
+            title,
+            active,
+            joined,
+            added_at
+
+        FROM channels
+
+        ORDER BY added_at DESC
+        """
+    ).fetchall()
+
+
+    result = []
+
+
+    for channel in channels:
+
+        count = conn.execute(
+            """
+            SELECT COUNT(*) AS c
+
+            FROM ads
+
+            WHERE
+                channel_id = ?
+                AND day_key = ?
+            """,
+            (
+                channel["id"],
+                today,
+            ),
+        ).fetchone()
+
+
+        result.append(
+            {
+                "id": channel["id"],
+                "username": channel["username"],
+                "title": channel["title"],
+                "active": bool(channel["active"]),
+                "joined": bool(channel["joined"]),
+                "today_messages": int(count["c"] or 0),
+                "added_at": channel["added_at"],
+            }
+        )
+
+
+    total_today = conn.execute(
+        """
+        SELECT COUNT(*) AS c
+
+        FROM ads
+
+        WHERE day_key = ?
+        """,
+        (today,),
+    ).fetchone()
+
+
+    return {
+        "channels": result,
+
+        "summary": {
+            "active_channels": len(
+                [
+                    x
+                    for x in result
+                    if x["active"]
+                ]
+            ),
+
+            "messages_today": int(
+                total_today["c"] or 0
+            ),
+        },
+    }
+
 
 # ---------------------------------------------------------------------------
 # لیست ماشین‌های دستی کاربر
@@ -337,6 +704,362 @@ def get_user_vehicle(conn: sqlite3.Connection, vehicle_id: int) -> sqlite3.Row |
         (vehicle_id,),
     ).fetchone()
 
+# ---------------------------------------------------------------------------
+# مدیریت هشدار قیمت
+# ---------------------------------------------------------------------------
+
+def create_price_alert(
+    conn: sqlite3.Connection,
+    user_id: int,
+    vehicle_key: str,
+    vehicle_name: str | None,
+    condition: str,
+    min_price: int | None = None,
+    max_price: int | None = None,
+) -> int:
+
+    """
+    ساخت هشدار قیمت جدید.
+
+    اگر هشدار مشابه قبلاً وجود داشته باشد،
+    همان id قبلی برگردانده می‌شود.
+    """
+
+    existing = conn.execute(
+        """
+        SELECT id
+        FROM price_alerts
+        WHERE
+            user_id = ?
+            AND vehicle_key = ?
+            AND condition = ?
+            AND (
+                min_price IS ?
+                OR min_price = ?
+            )
+            AND (
+                max_price IS ?
+                OR max_price = ?
+            )
+            AND active = 1
+        """,
+        (
+            user_id,
+            vehicle_key,
+            condition,
+            min_price,
+            min_price,
+            max_price,
+            max_price,
+        ),
+    ).fetchone()
+
+
+    if existing:
+        return int(existing["id"])
+
+
+    cursor = conn.execute(
+        """
+        INSERT INTO price_alerts (
+            user_id,
+            vehicle_key,
+            vehicle_name,
+            condition,
+            min_price,
+            max_price
+        )
+        VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        (
+            user_id,
+            vehicle_key,
+            vehicle_name,
+            condition,
+            min_price,
+            max_price,
+        ),
+    )
+
+    conn.commit()
+
+    return cursor.lastrowid
+
+
+def list_price_alerts(
+    conn: sqlite3.Connection,
+    user_id: int,
+) -> list[sqlite3.Row]:
+    """
+    لیست هشدارهای یک کاربر.
+    """
+
+    return conn.execute(
+        """
+        SELECT *
+        FROM price_alerts
+        WHERE user_id = ?
+        ORDER BY created_at DESC
+        """,
+        (user_id,),
+    ).fetchall()
+
+
+def get_price_alert(
+    conn: sqlite3.Connection,
+    alert_id: int,
+) -> sqlite3.Row | None:
+    """
+    گرفتن یک هشدار با id.
+    """
+
+    return conn.execute(
+        """
+        SELECT *
+        FROM price_alerts
+        WHERE id = ?
+        """,
+        (alert_id,),
+    ).fetchone()
+
+
+def delete_price_alert(
+    conn: sqlite3.Connection,
+    alert_id: int,
+) -> bool:
+    """
+    حذف هشدار.
+    """
+
+    cursor = conn.execute(
+        """
+        DELETE FROM price_alerts
+        WHERE id = ?
+        """,
+        (alert_id,),
+    )
+
+    conn.commit()
+
+    return cursor.rowcount > 0
+
+
+def toggle_price_alert(
+    conn: sqlite3.Connection,
+    alert_id: int,
+) -> bool:
+    """
+    تغییر وضعیت فعال/غیرفعال هشدار.
+    """
+
+    cursor = conn.execute(
+        """
+        UPDATE price_alerts
+        SET active =
+            CASE
+                WHEN active = 1 THEN 0
+                ELSE 1
+            END
+        WHERE id = ?
+        """,
+        (alert_id,),
+    )
+
+    conn.commit()
+
+    return cursor.rowcount > 0
+
+def check_price_alerts(
+    conn: sqlite3.Connection,
+    ads: Iterable[sqlite3.Row],
+) -> list[sqlite3.Row]:
+    """
+    بررسی آگهی‌های جدید با هشدارهای فعال.
+
+    خروجی:
+    لیست هشدارهایی که فعال شده‌اند.
+    """
+
+    triggered = []
+
+    alerts = conn.execute(
+        """
+        SELECT *
+        FROM price_alerts
+        WHERE active = 1
+        """
+    ).fetchall()
+
+  # ---------------------------------------------------------------------------
+# بررسی هشدارهای قیمت
+# ---------------------------------------------------------------------------
+def check_price_alerts(
+    conn: sqlite3.Connection,
+    ads: Iterable[sqlite3.Row],
+) -> list[sqlite3.Row]:
+    """
+    بررسی آگهی‌های جدید با هشدارهای فعال.
+
+    اگر شرط یک هشدار برقرار شود:
+    - داخل alert_events ذخیره می‌شود
+    - آگهی در خروجی برگردانده می‌شود
+    """
+
+    triggered = []
+
+    alerts = conn.execute(
+        """
+        SELECT *
+        FROM price_alerts
+        WHERE active = 1
+        """
+    ).fetchall()
+
+
+    for ad in ads:
+
+        if not ad["vehicle_key"]:
+            continue
+
+        if ad["price_million"] is None:
+            continue
+
+
+        for alert in alerts:
+
+            if alert["vehicle_key"] != ad["vehicle_key"]:
+                continue
+
+
+            matched = False
+
+            price = ad["price_million"]
+
+            condition = alert["condition"]
+
+
+            if condition == "below":
+
+                matched = (
+                    alert["min_price"] is not None
+                    and price < alert["min_price"]
+                )
+
+
+            elif condition == "above":
+
+                matched = (
+                    alert["max_price"] is not None
+                    and price > alert["max_price"]
+                )
+
+
+            elif condition == "between":
+
+                matched = (
+                    alert["min_price"] is not None
+                    and alert["max_price"] is not None
+                    and alert["min_price"] <= price <= alert["max_price"]
+                )
+
+
+            if not matched:
+                continue
+
+
+            try:
+
+                conn.execute(
+                    """
+                    INSERT OR IGNORE INTO alert_events (
+                        alert_id,
+                        ad_id,
+                        vehicle_key,
+                        price_million
+                    )
+                    VALUES (?, ?, ?, ?)
+                    """,
+                    (
+                        alert["id"],
+                        ad["id"],
+                        ad["vehicle_key"],
+                        price,
+                    ),
+                )
+
+                conn.commit()
+
+                triggered.append(ad)
+
+
+            except Exception:
+                continue
+
+
+    return triggered
+
+
+
+# ---------------------------------------------------------------------------
+# مدیریت رخدادهای هشدار قیمت
+# ---------------------------------------------------------------------------
+
+def list_alert_events(
+    conn: sqlite3.Connection,
+    limit: int = 50,
+    offset: int = 0,
+) -> list[sqlite3.Row]:
+    """
+    لیست آخرین هشدارهای فعال‌شده.
+    """
+
+    return conn.execute(
+        """
+        SELECT
+            ae.*,
+            pa.vehicle_name,
+            pa.condition,
+            pa.user_id,
+            ads.raw_text,
+            ads.channel_username,
+            ads.source_message_id
+
+        FROM alert_events ae
+
+        LEFT JOIN price_alerts pa
+            ON pa.id = ae.alert_id
+
+        LEFT JOIN ads
+            ON ads.id = ae.ad_id
+
+        ORDER BY ae.created_at DESC
+
+        LIMIT ?
+        OFFSET ?
+        """,
+        (
+            limit,
+            offset,
+        ),
+    ).fetchall()
+
+
+
+def count_alert_events(
+    conn: sqlite3.Connection,
+) -> int:
+    """
+    تعداد کل رخدادهای هشدار.
+    """
+
+    row = conn.execute(
+        """
+        SELECT COUNT(*) AS c
+        FROM alert_events
+        """
+    ).fetchone()
+
+    return int(row["c"] or 0)
 
 # ---------------------------------------------------------------------------
 # جست‌وجوی متنی آگهی‌ها بر اساس نام ماشینی که کاربر وارد کرده
@@ -357,6 +1080,23 @@ def _search_filters(query: str) -> tuple[str, list[object]]:
     if not conditions:
         conditions.append("1=0")
     return " AND ".join(conditions), params
+
+def get_ad_by_id(
+    conn: sqlite3.Connection,
+    ad_id: int,
+) -> sqlite3.Row | None:
+    """
+    دریافت یک آگهی کامل برای نمایش Modal.
+    """
+
+    return conn.execute(
+        """
+        SELECT *
+        FROM ads
+        WHERE id = ?
+        """,
+        (ad_id,),
+    ).fetchone()
 
 
 def purge_old_ads(conn: sqlite3.Connection) -> int:
@@ -400,6 +1140,136 @@ def cheapest_by_vehicle(conn: sqlite3.Connection, day_key: str | None = None) ->
         """,
         (day_key,),
     ).fetchall()
+
+def get_filter_options_for_web(
+    conn: sqlite3.Connection,
+    day_key: str | None = None,
+) -> dict:
+    """گزینه‌های فیلتر برای فرانت‌اند وب، بر اساس آگهی‌های همان روز."""
+    day_key = day_key or today_day_key()
+
+    vehicle_rows = conn.execute(
+        """
+        SELECT vehicle_key, vehicle_name, COUNT(DISTINCT dedup_key) AS count
+        FROM ads
+        WHERE
+            day_key = ?
+            AND status = 'sale'
+            AND vehicle_key IS NOT NULL
+            AND vehicle_name IS NOT NULL
+        GROUP BY vehicle_key, vehicle_name
+        ORDER BY vehicle_name COLLATE NOCASE
+        """,
+        (day_key,),
+    ).fetchall()
+
+    year_rows = conn.execute(
+        """
+        SELECT year, COUNT(DISTINCT dedup_key) AS count
+        FROM ads
+        WHERE
+            day_key = ?
+            AND status = 'sale'
+            AND year IS NOT NULL
+        GROUP BY year
+        ORDER BY year DESC
+        """,
+        (day_key,),
+    ).fetchall()
+
+    color_rows = conn.execute(
+        """
+        SELECT color, COUNT(DISTINCT dedup_key) AS count
+        FROM ads
+        WHERE
+            day_key = ?
+            AND status = 'sale'
+            AND color IS NOT NULL
+        GROUP BY color
+        ORDER BY color COLLATE NOCASE
+        """,
+        (day_key,),
+    ).fetchall()
+
+    range_row = conn.execute(
+        """
+        SELECT
+            MIN(price_million) AS min_price,
+            MAX(price_million) AS max_price,
+            MIN(mileage_km) AS min_mileage,
+            MAX(mileage_km) AS max_mileage
+        FROM ads
+        WHERE
+            day_key = ?
+            AND status = 'sale'
+        """,
+        (day_key,),
+    ).fetchone()
+
+    count_row = conn.execute(
+        """
+        SELECT
+            COUNT(DISTINCT CASE WHEN status = 'sale' AND price_million IS NOT NULL THEN dedup_key END) AS priced,
+            COUNT(DISTINCT CASE WHEN status = 'sale' AND price_million IS NULL THEN dedup_key END) AS unpriced,
+            COUNT(DISTINCT CASE WHEN status = 'sale' AND mileage_km IS NOT NULL THEN dedup_key END) AS used,
+            COUNT(DISTINCT CASE WHEN status = 'buyer' THEN dedup_key END) AS buyers
+        FROM ads
+        WHERE day_key = ?
+        """,
+        (day_key,),
+    ).fetchone()
+
+    vehicles_by_key: dict[str, dict] = {}
+    for row in vehicle_rows:
+        vehicles_by_key[row["vehicle_key"]] = {
+            "key": row["vehicle_key"],
+            "name": row["vehicle_name"],
+            "count": int(row["count"] or 0),
+        }
+
+    for key, name in known_vehicle_options():
+        vehicles_by_key.setdefault(
+            key,
+            {
+                "key": key,
+                "name": name,
+                "count": 0,
+            },
+        )
+
+    return {
+        "vehicles": sorted(
+            vehicles_by_key.values(),
+            key=lambda item: item["name"],
+        ),
+        "years": [
+            {
+                "year": int(row["year"]),
+                "count": int(row["count"] or 0),
+            }
+            for row in year_rows
+        ],
+        "colors": [
+            {
+                "color": row["color"],
+                "count": int(row["count"] or 0),
+            }
+            for row in color_rows
+        ],
+        "ranges": {
+            "min_price": int(range_row["min_price"] or 0),
+            "max_price": int(range_row["max_price"] or 0),
+            "min_mileage": int(range_row["min_mileage"] or 0),
+            "max_mileage": int(range_row["max_mileage"] or 0),
+        },
+        "counts": {
+            "priced": int(count_row["priced"] or 0),
+            "unpriced": int(count_row["unpriced"] or 0),
+            "used": int(count_row["used"] or 0),
+            "buyers": int(count_row["buyers"] or 0),
+        },
+    }
+
 
 
 def today_day_key() -> str:
@@ -474,6 +1344,372 @@ def search_priced_ads(
         LIMIT ? OFFSET ?
         """,
         params_all,
+    ).fetchall()
+
+
+def list_priced_ads_for_web(
+    conn: sqlite3.Connection,
+    query: str | None = None,
+    vehicle_keys: list[str] | None = None,
+    years: list[int] | None = None,
+    colors: list[str] | None = None,
+    min_price: int | None = None,
+    max_price: int | None = None,
+    min_mileage: int | None = None,
+    max_mileage: int | None = None,
+    sort: str = "newest",
+    limit: int = 50,
+    offset: int = 0,
+    day_key: str | None = None,
+) -> list[sqlite3.Row]:
+    """آگهی‌های قیمت‌دار امروز برای جدول اصلی وب با فیلترهای پیشرفته.
+
+    پشتیبانی از:
+    - جست‌وجوی متنی
+    - چند vehicle_key
+    - چند year
+    - چند color
+    - بازه قیمت
+    - بازه کارکرد
+    - مرتب‌سازی
+    """
+    day_key = day_key or today_day_key()
+
+    filters = [
+        "status = 'sale'",
+        "price_million IS NOT NULL",
+        "day_key = ?",
+    ]
+    params: list[object] = [day_key]
+
+    if query:
+        like_where, like_params = _search_filters(query)
+        filters.append(like_where)
+        params.extend(like_params)
+
+    if vehicle_keys:
+        placeholders = ", ".join("?" for _ in vehicle_keys)
+        filters.append(f"vehicle_key IN ({placeholders})")
+        params.extend(vehicle_keys)
+
+    if years:
+        placeholders = ", ".join("?" for _ in years)
+        filters.append(f"year IN ({placeholders})")
+        params.extend(years)
+
+    if colors:
+        placeholders = ", ".join("?" for _ in colors)
+        filters.append(f"color IN ({placeholders})")
+        params.extend(colors)
+
+    if min_price is not None:
+        filters.append("price_million >= ?")
+        params.append(min_price)
+
+    if max_price is not None:
+        filters.append("price_million <= ?")
+        params.append(max_price)
+
+    if min_mileage is not None:
+        filters.append("mileage_km >= ?")
+        params.append(min_mileage)
+
+    if max_mileage is not None:
+        filters.append("mileage_km <= ?")
+        params.append(max_mileage)
+
+    sort_sql_by_name = {
+        "newest": "message_date IS NULL, message_date DESC, id DESC",
+        "oldest": "message_date IS NULL, message_date ASC, id ASC",
+        "price_asc": "price_million ASC, id DESC",
+        "price_desc": "price_million DESC, id DESC",
+        "year_desc": "year IS NULL, year DESC, id DESC",
+        "year_asc": "year IS NULL, year ASC, id DESC",
+        "mileage_asc": "mileage_km IS NULL, mileage_km ASC, id DESC",
+        "mileage_desc": "mileage_km IS NULL, mileage_km DESC, id DESC",
+    }
+    order_by = sort_sql_by_name.get(sort, sort_sql_by_name["newest"])
+
+    where = " AND ".join(filters)
+    params.extend([limit, offset])
+
+    return conn.execute(
+        f"""
+        WITH matched AS (
+            SELECT *,
+                ROW_NUMBER() OVER (
+                    PARTITION BY dedup_key
+                    ORDER BY {order_by}
+                ) AS rn
+            FROM ads
+            WHERE {where}
+        )
+        SELECT * FROM matched
+        WHERE rn = 1
+        ORDER BY {order_by}
+        LIMIT ? OFFSET ?
+        """,
+        params,
+    ).fetchall()
+
+def list_unpriced_ads_for_web(
+    conn: sqlite3.Connection,
+    query: str | None = None,
+    vehicle_keys: list[str] | None = None,
+    years: list[int] | None = None,
+    colors: list[str] | None = None,
+    sort: str = "newest",
+    limit: int = 50,
+    offset: int = 0,
+    day_key: str | None = None,
+) -> list[sqlite3.Row]:
+    """آگهی‌های فروش بدون قیمت امروز برای وب با فیلترهای پیشرفته."""
+
+    day_key = day_key or today_day_key()
+
+    filters = [
+        "status = 'sale'",
+        "price_million IS NULL",
+        "day_key = ?",
+    ]
+
+    params: list[object] = [day_key]
+
+    if query:
+        like_where, like_params = _search_filters(query)
+        filters.append(like_where)
+        params.extend(like_params)
+
+    if vehicle_keys:
+        placeholders = ", ".join("?" for _ in vehicle_keys)
+        filters.append(f"vehicle_key IN ({placeholders})")
+        params.extend(vehicle_keys)
+
+    if years:
+        placeholders = ", ".join("?" for _ in years)
+        filters.append(f"year IN ({placeholders})")
+        params.extend(years)
+
+    if colors:
+        placeholders = ", ".join("?" for _ in colors)
+        filters.append(f"color IN ({placeholders})")
+        params.extend(colors)
+
+    sort_sql = {
+        "newest": "message_date IS NULL, message_date DESC, id DESC",
+        "oldest": "message_date IS NULL, message_date ASC, id ASC",
+        "year_desc": "year IS NULL, year DESC, id DESC",
+        "year_asc": "year IS NULL, year ASC, id DESC",
+    }
+
+    order_by = sort_sql.get(
+        sort,
+        sort_sql["newest"]
+    )
+
+    where = " AND ".join(filters)
+
+    params.extend([limit, offset])
+
+    return conn.execute(
+        f"""
+        WITH matched AS (
+            SELECT *,
+                ROW_NUMBER() OVER (
+                    PARTITION BY dedup_key
+                    ORDER BY {order_by}
+                ) AS rn
+            FROM ads
+            WHERE {where}
+        )
+        SELECT *
+        FROM matched
+        WHERE rn = 1
+        ORDER BY {order_by}
+        LIMIT ? OFFSET ?
+        """,
+        params,
+    ).fetchall()
+
+def list_used_ads_for_web(
+    conn: sqlite3.Connection,
+    query: str | None = None,
+    vehicle_keys: list[str] | None = None,
+    years: list[int] | None = None,
+    colors: list[str] | None = None,
+    min_price: int | None = None,
+    max_price: int | None = None,
+    min_mileage: int | None = None,
+    max_mileage: int | None = None,
+    sort: str = "newest",
+    limit: int = 50,
+    offset: int = 0,
+    day_key: str | None = None,
+) -> list[sqlite3.Row]:
+    """آگهی‌های کارکرده امروز برای وب با فیلترهای کامل."""
+
+    day_key = day_key or today_day_key()
+
+    filters = [
+        "status = 'sale'",
+        "mileage_km IS NOT NULL",
+        "day_key = ?",
+    ]
+
+    params: list[object] = [day_key]
+
+    if query:
+        like_where, like_params = _search_filters(query)
+        filters.append(like_where)
+        params.extend(like_params)
+
+    if vehicle_keys:
+        placeholders = ", ".join("?" for _ in vehicle_keys)
+        filters.append(f"vehicle_key IN ({placeholders})")
+        params.extend(vehicle_keys)
+
+    if years:
+        placeholders = ", ".join("?" for _ in years)
+        filters.append(f"year IN ({placeholders})")
+        params.extend(years)
+
+    if colors:
+        placeholders = ", ".join("?" for _ in colors)
+        filters.append(f"color IN ({placeholders})")
+        params.extend(colors)
+
+    if min_price is not None:
+        filters.append("price_million >= ?")
+        params.append(min_price)
+
+    if max_price is not None:
+        filters.append("price_million <= ?")
+        params.append(max_price)
+
+    if min_mileage is not None:
+        filters.append("mileage_km >= ?")
+        params.append(min_mileage)
+
+    if max_mileage is not None:
+        filters.append("mileage_km <= ?")
+        params.append(max_mileage)
+
+    sort_sql = {
+        "newest": "message_date IS NULL, message_date DESC, id DESC",
+        "oldest": "message_date IS NULL, message_date ASC, id ASC",
+        "price_asc": "price_million ASC, id DESC",
+        "price_desc": "price_million DESC, id DESC",
+        "mileage_asc": "mileage_km ASC, id DESC",
+        "mileage_desc": "mileage_km DESC, id DESC",
+        "year_desc": "year IS NULL, year DESC, id DESC",
+        "year_asc": "year IS NULL, year ASC, id DESC",
+    }
+
+    order_by = sort_sql.get(
+        sort,
+        sort_sql["newest"]
+    )
+
+    where = " AND ".join(filters)
+
+    params.extend([limit, offset])
+
+    return conn.execute(
+        f"""
+        WITH matched AS (
+            SELECT *,
+                ROW_NUMBER() OVER (
+                    PARTITION BY dedup_key
+                    ORDER BY {order_by}
+                ) AS rn
+            FROM ads
+            WHERE {where}
+        )
+        SELECT *
+        FROM matched
+        WHERE rn = 1
+        ORDER BY {order_by}
+        LIMIT ? OFFSET ?
+        """,
+        params,
+    ).fetchall()
+
+def list_buyer_ads_for_web(
+    conn: sqlite3.Connection,
+    query: str | None = None,
+    vehicle_keys: list[str] | None = None,
+    years: list[int] | None = None,
+    colors: list[str] | None = None,
+    sort: str = "newest",
+    limit: int = 50,
+    offset: int = 0,
+    day_key: str | None = None,
+) -> list[sqlite3.Row]:
+    """پیام‌های خریدار امروز برای وب با فیلترهای پیشرفته."""
+
+    day_key = day_key or today_day_key()
+
+    filters = [
+        "status = 'buyer'",
+        "day_key = ?",
+    ]
+
+    params: list[object] = [day_key]
+
+    if query:
+        like_where, like_params = _search_filters(query)
+        filters.append(like_where)
+        params.extend(like_params)
+
+    if vehicle_keys:
+        placeholders = ", ".join("?" for _ in vehicle_keys)
+        filters.append(f"vehicle_key IN ({placeholders})")
+        params.extend(vehicle_keys)
+
+    if years:
+        placeholders = ", ".join("?" for _ in years)
+        filters.append(f"year IN ({placeholders})")
+        params.extend(years)
+
+    if colors:
+        placeholders = ", ".join("?" for _ in colors)
+        filters.append(f"color IN ({placeholders})")
+        params.extend(colors)
+
+    sort_sql = {
+        "newest": "message_date IS NULL, message_date DESC, id DESC",
+        "oldest": "message_date IS NULL, message_date ASC, id ASC",
+        "year_desc": "year IS NULL, year DESC, id DESC",
+        "year_asc": "year IS NULL, year ASC, id DESC",
+    }
+
+    order_by = sort_sql.get(
+        sort,
+        sort_sql["newest"]
+    )
+
+    where = " AND ".join(filters)
+
+    params.extend([limit, offset])
+
+    return conn.execute(
+        f"""
+        WITH matched AS (
+            SELECT *,
+                ROW_NUMBER() OVER (
+                    PARTITION BY dedup_key
+                    ORDER BY {order_by}
+                ) AS rn
+            FROM ads
+            WHERE {where}
+        )
+        SELECT *
+        FROM matched
+        WHERE rn = 1
+        ORDER BY {order_by}
+        LIMIT ? OFFSET ?
+        """,
+        params,
     ).fetchall()
 
 
@@ -685,3 +1921,245 @@ def stats(conn: sqlite3.Connection) -> dict[str, int]:
         conn.execute("SELECT COUNT(*) FROM user_vehicles").fetchone()[0]
     )
     return result
+
+def get_dashboard_summary(
+    conn: sqlite3.Connection,
+) -> dict:
+    """
+    خلاصه کامل داشبورد سایت.
+    """
+
+    today = today_day_key()
+
+    ads_row = conn.execute(
+        """
+        SELECT
+            COUNT(*) AS total_ads,
+
+            SUM(
+                CASE
+                    WHEN status = 'sale'
+                    AND price_million IS NOT NULL
+                    THEN 1 ELSE 0
+                END
+            ) AS priced,
+
+            SUM(
+                CASE
+                    WHEN status = 'sale'
+                    AND price_million IS NULL
+                    THEN 1 ELSE 0
+                END
+            ) AS unpriced,
+
+            SUM(
+                CASE
+                    WHEN status = 'sale'
+                    AND mileage_km IS NOT NULL
+                    THEN 1 ELSE 0
+                END
+            ) AS used,
+
+            SUM(
+                CASE
+                    WHEN status = 'buyer'
+                    THEN 1 ELSE 0
+                END
+            ) AS buyers
+
+        FROM ads
+
+        WHERE day_key = ?
+        """,
+        (today,),
+    ).fetchone()
+
+
+    channel_row = conn.execute(
+        """
+        SELECT
+            COUNT(*) AS active_channels
+        FROM channels
+        WHERE active = 1
+        """
+    ).fetchone()
+
+
+    message_row = conn.execute(
+        """
+        SELECT
+            COUNT(*) AS messages_today
+        FROM ads
+        WHERE day_key = ?
+        """,
+        (today,),
+    ).fetchone()
+
+
+    alert_row = conn.execute(
+        """
+        SELECT
+            COUNT(*) AS alerts
+        FROM alert_events
+        """
+    ).fetchone()
+
+
+    cheapest_rows = conn.execute(
+        """
+        WITH ranked AS (
+
+            SELECT
+                *,
+
+                ROW_NUMBER() OVER (
+                    PARTITION BY vehicle_key
+                    ORDER BY price_million ASC, id DESC
+                ) AS rn
+
+            FROM ads
+
+            WHERE
+                day_key = ?
+
+                AND status = 'sale'
+
+                AND price_million IS NOT NULL
+
+                AND vehicle_key IS NOT NULL
+        )
+
+
+        SELECT
+            id,
+            vehicle_key,
+            vehicle_name,
+            price_million,
+            year,
+            month,
+            color,
+            mileage_km,
+            phone,
+            channel_username,
+            source_message_id
+
+        FROM ranked
+
+        WHERE rn = 1
+
+        ORDER BY price_million ASC
+
+        LIMIT 10
+        """,
+        (today,),
+    ).fetchall()
+
+
+    return {
+        "today": {
+            "total_ads": int(ads_row["total_ads"] or 0),
+            "priced": int(ads_row["priced"] or 0),
+            "unpriced": int(ads_row["unpriced"] or 0),
+            "used": int(ads_row["used"] or 0),
+            "buyers": int(ads_row["buyers"] or 0),
+        },
+
+        "channels": {
+            "active": int(channel_row["active_channels"] or 0),
+            "messages_today": int(message_row["messages_today"] or 0),
+        },
+
+        "alerts": {
+            "count": int(alert_row["alerts"] or 0),
+        },
+
+        "cheapest": [
+            {
+                "id": row["id"],
+                "vehicle_key": row["vehicle_key"],
+                "vehicle_name": row["vehicle_name"],
+                "price_million": row["price_million"],
+                "year": row["year"],
+                "month": row["month"],
+                "color": row["color"],
+                "mileage_km": row["mileage_km"],
+                "phone": row["phone"],
+                "channel_username": row["channel_username"],
+                "source_message_id": row["source_message_id"],
+            }
+            for row in cheapest_rows
+        ],
+    }
+
+def get_live_cheapest_vehicles(
+    conn: sqlite3.Connection,
+    limit: int = 50,
+) -> list[sqlite3.Row]:
+    """
+    کمترین قیمت لحظه‌ای هر مدل خودرو برای صفحه کارت‌های سایت.
+
+    قوانین:
+    - فقط آگهی‌های امروز
+    - فقط فروش
+    - فقط دارای قیمت
+    - فقط مدل‌های شناخته‌شده
+    - یک مورد برای هر خودرو
+    """
+
+    today = today_day_key()
+
+    return conn.execute(
+        """
+        WITH ranked AS (
+
+            SELECT
+                *,
+
+                ROW_NUMBER() OVER (
+                    PARTITION BY vehicle_key
+                    ORDER BY
+                        price_million ASC,
+                        id DESC
+                ) AS rn
+
+            FROM ads
+
+            WHERE
+                day_key = ?
+
+                AND status = 'sale'
+
+                AND price_million IS NOT NULL
+
+                AND vehicle_key IS NOT NULL
+        )
+
+
+        SELECT
+            id,
+            vehicle_key,
+            vehicle_name,
+            price_million,
+            year,
+            month,
+            color,
+            mileage_km,
+            phone,
+            channel_username,
+            source_message_id,
+            message_date
+
+        FROM ranked
+
+        WHERE rn = 1
+
+        ORDER BY
+            price_million ASC
+
+        LIMIT ?
+        """,
+        (
+            today,
+            limit,
+        ),
+    ).fetchall()

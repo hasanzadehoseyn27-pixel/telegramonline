@@ -49,6 +49,122 @@ VEHICLE_PATTERNS: list[tuple[str, str, str]] = [
     ("beijing", "بیجینگ", r"\bبیجینگ\b|\bbeijing\b"),
 ]
 
+DETAILED_VEHICLE_PATTERNS: list[tuple[str, str, str]] = [
+    ("peugeot_207_pana_plus_manual_rim", "۲۰۷ پانا ارتقا پلاس دنده رینگ", r"(?:207|۲۰۷)\s*(?:پانا|پاناروما|پانوراما).*(?:ارتقا|ارتقاء).*(?:پلاس).*(?:دنده).*(?:رینگ)"),
+    ("peugeot_207_pana_plus_manual_cap", "۲۰۷ پانا ارتقا پلاس دنده قالپاق", r"(?:207|۲۰۷)\s*(?:پانا|پاناروما|پانوراما).*(?:ارتقا|ارتقاء).*(?:پلاس).*(?:دنده).*(?:قالپاق|بدون\s*رینگ)"),
+    ("peugeot_207_pana_upgrade_manual", "۲۰۷ دنده پانا ارتقا", r"(?=.*(?:207|۲۰۷))(?=.*(?:پانا|پاناروما|پانوراما))(?=.*(?:ارتقا|ارتقاء))(?=.*(?:دنده)).*"),
+    ("peugeot_207_pana_upgrade_auto", "۲۰۷ اتومات پانا ارتقا", r"(?=.*(?:207|۲۰۷))(?=.*(?:پانا|پاناروما|پانوراما))(?=.*(?:ارتقا|ارتقاء))(?=.*(?:اتومات|اتو)).*"),
+    ("peugeot_207_metal_manual_hydraulic_disc", "۲۰۷ سقف فلز دنده فرمان هیدرولیک دیسک عقب", r"(?:207|۲۰۷).*(?:سقف\s*فلز).*(?:دنده).*(?:هیدرولیک).*(?:دیسک\s*عقب)"),
+    ("peugeot_207_metal_manual_hydraulic", "۲۰۷ سقف فلز دنده فرمان هیدرولیک", r"(?:207|۲۰۷).*(?:سقف\s*فلز).*(?:دنده).*(?:هیدرولیک)"),
+    ("peugeot_207_metal_manual_electric_full", "۲۰۷ سقف فلز دنده فرمان برقی فول", r"(?:207|۲۰۷).*(?:سقف\s*فلز).*(?:دنده).*(?:برقی).*(?:فول)?"),
+    ("peugeot_207_metal_auto", "۲۰۷ سقف فلز اتومات", r"(?:207|۲۰۷).*(?:سقف\s*فلز).*(?:اتومات|اتو)\b"),
+    ("peugeot_207_pana_plus_auto", "۲۰۷ پانا ارتقا پلاس اتومات", r"(?:207|۲۰۷)\s*(?:پانا|پاناروما|پانوراما).*(?:ارتقا|ارتقاء).*(?:پلاس).*(?:اتومات|اتو)"),
+    ("peugeot_207_tu3", "۲۰۷ موتور TU3", r"(?:207|۲۰۷).*(?:tu3|تی\s*یو\s*تری|تیوتری|تی\s*یو\s*3)"),
+    ("soren_plus_xu7p_electric", "سمند سورن پلاس XU7P برقی", r"(?:سمند\s*)?سورن.*(?:پلاس).*(?:xu7p|ایکس\s*یو\s*7|موتور\s*پارس).*(?:برقی)"),
+    ("soren_plus_xu7p_wire", "سمند سورن پلاس XU7P سیمی", r"(?:سمند\s*)?سورن.*(?:پلاس).*(?:xu7p|ایکس\s*یو\s*7|موتور\s*پارس).*(?:سیمی)"),
+    ("soren_dual_big_wire", "سمند سورن دوگانه مخزن بزرگ سیمی", r"(?:سمند\s*)?سورن.*(?:دوگانه).*(?:مخزن\s*بزرگ).*(?:سیمی)"),
+    ("soren_dual_big_electric", "سمند سورن دوگانه مخزن بزرگ برقی", r"(?:سمند\s*)?سورن.*(?:دوگانه).*(?:مخزن\s*بزرگ).*(?:برقی)"),
+    ("soren_dual_small_wire", "سمند سورن دوگانه مخزن کوچک سیمی", r"(?:سمند\s*)?سورن.*(?:دوگانه).*(?:مخزن\s*(?:کوچک|کوچیک)).*(?:سیمی)"),
+    ("soren_dual_small_electric", "سمند سورن دوگانه مخزن کوچک برقی", r"(?:سمند\s*)?سورن.*(?:دوگانه).*(?:مخزن\s*(?:کوچک|کوچیک)).*(?:برقی)"),
+    ("saina_s_dual", "ساینا S دوگانه", r"ساینا\s*(?:s|اس).*(?:دوگانه)"),
+    ("saina_s", "ساینا S", r"ساینا\s*(?:s|اس)\b"),
+    ("quick_gxr_rim", "کوییک GXR با رینگ", r"کوییک\s*(?:gxr|جی\s*ایکس\s*آر).*(?:رینگ)"),
+    ("quick_gxr_cap", "کوییک GXR بدون رینگ", r"کوییک\s*(?:gxr|جی\s*ایکس\s*آر).*(?:قالپاق|بدون\s*رینگ)"),
+    ("quick_gxrl", "کوییک GXRL", r"کوییک\s*(?:gxrl|جی\s*ایکس\s*آر\s*ال)\b"),
+    ("quick_gx", "کوییک GX", r"کوییک\s*(?:gx|جی\s*ایکس)\b"),
+    ("quick_rs", "کوییک RS", r"کوییک\s*(?:rs|آر\s*اس)\b"),
+    ("quick_s", "کوییک S", r"کوییک\s*(?:s|اس)\b"),
+    ("shahin_auto_plus_tu5", "شاهین اتومات پلاس TU5", r"شاهین.*(?:اتو|اتومات|اتوماتیک).*(?:پلاس).*(?:tu5|تی\s*یو\s*فایو|تی\s*یو\s*5)"),
+    ("shahin_auto_cvt", "شاهین اتومات CVT", r"شاهین.*(?:اتو|اتومات|اتوماتیک|cvt)"),
+    ("shahin_g_manual_sunroof", "شاهین G دنده با سانروف", r"شاهین.*(?:g|جی).*(?:دنده).*(?:سانروف)"),
+    ("shahin_manual_no_sunroof", "شاهین دنده بدون سانروف", r"شاهین.*(?:دنده).*(?:بدون\s*سانروف|بی\s*سانروف)"),
+    ("tara_v4_ef7_turbo", "تارا اتومات V4 موتور EF7 توربو", r"تارا.*(?:اتومات|اتو).*(?:v4|وی\s*4).*(?:ef7|ای\s*اف\s*سون|توربو)"),
+    ("tara_v4_tu5", "تارا اتومات V4 موتور TU5", r"تارا.*(?:اتومات|اتو).*(?:v4|وی\s*4).*(?:tu5|تی\s*یو\s*فایو|تی\s*یو\s*5)"),
+    ("tara_v1_manual", "تارا دنده V1", r"تارا.*(?:دنده).*(?:v1|وی\s*1)"),
+    ("respect_2_prime_new_bumper", "رسپکت ۲ پرایم سپر جدید", r"(?:ریسپکت|رسپکت|respect).*(?:2|۲|دو).*(?:پرایم).*(?:سپر\s*جدید)"),
+    ("respect_2_prime_old_bumper", "رسپکت ۲ پرایم سپر قدیم", r"(?:ریسپکت|رسپکت|respect).*(?:2|۲|دو).*(?:پرایم).*(?:سپر\s*(?:قدیم|قدیمی))"),
+    ("atlas_s_sunroof", "اطلس S با سانروف", r"اطلس\s*(?:s|اس).*(?:سانروف)(?!.*(?:بدون|بی))"),
+    ("atlas_s_no_sunroof", "اطلس S بدون سانروف", r"اطلس\s*(?:s|اس).*(?:بدون\s*سانروف|بی\s*سانروف)"),
+    ("atlas_auto", "اطلس اتومات", r"اطلس.*(?:اتومات|اتو)\b"),
+    ("sahand_s", "سهند S", r"سهند\s*(?:s|اس)\b"),
+    ("sahand_auto", "سهند اتوماتیک", r"سهند.*(?:اتومات|اتوماتیک|اتو)\b"),
+    ("pars_nova", "پارس نوا", r"پارس\s*نوا"),
+    ("citroen_c3", "سیتروئن C3", r"(?:سیتروئن|citroen)\s*(?:c3|سی\s*3)"),
+    ("changan_cs55_montage", "چانگان CS55 مونتاژی", r"چانگان\s*(?:cs\s*55|cs55).*(?:مونتاژ|مونتاژی)"),
+    ("changan_cs55_import", "چانگان CS55 وارداتی", r"چانگان\s*(?:cs\s*55|cs55).*(?:واردات|وارداتی)"),
+    ("changan_cs35_montage", "چانگان CS35 مونتاژی", r"چانگان\s*(?:cs\s*35|cs35).*(?:مونتاژ|مونتاژی)"),
+    ("changan_cs35_import", "چانگان CS35 وارداتی", r"چانگان\s*(?:cs\s*35|cs35).*(?:واردات|وارداتی)"),
+    ("changan_unit", "چانگان یونی‌تی", r"چانگان\s*(?:یونیتی|uni\s*t|unit|یونی\s*تی)"),
+    ("rira", "ری‌را", r"ریرا|ری\s*را"),
+    ("haima_s5", "هایما S5", r"هایما\s*(?:s\s*5|s5|اس\s*5)"),
+    ("haima_s7", "هایما S7", r"هایما\s*(?:s\s*7|s7|اس\s*7)"),
+    ("haima_s8", "هایما S8", r"هایما\s*(?:s\s*8|s8|اس\s*8)"),
+    ("haima_7x", "هایما 7X", r"هایما\s*(?:7\s*x|7x)"),
+    ("eagle", "ایگل", r"\bایگل\b"),
+    ("jack_j4", "جک J4", r"جک\s*(?:j\s*4|j4)"),
+    ("jack_j7", "جک J7", r"جک\s*(?:j\s*7|j7)"),
+    ("jack_x5", "جک X5", r"جک\s*(?:x\s*5|x5)"),
+    ("jack_t9", "جک T9", r"جک\s*(?:t\s*9|t9)|kmc\s*t\s*9"),
+    ("bac", "بک", r"\bبک\b|\bbac\b"),
+    ("jack_sr3", "جک SR3", r"جک\s*(?:sr\s*3|sr3)"),
+    ("jack_sr6", "جک SR6", r"جک\s*(?:sr\s*6|sr6)"),
+    ("fidelity_elite_5", "فیدلیتی الیت ۵ نفره", r"(?:فید|فیدلیتی).*(?:الیت).*(?:5|۵)\s*نفر"),
+    ("fidelity_elite_7", "فیدلیتی الیت ۷ نفره", r"(?:فید|فیدلیتی).*(?:الیت).*(?:7|۷)\s*نفر"),
+    ("fidelity_prestige", "فیدلیتی پرستیژ", r"(?:فید|فیدلیتی).*(?:پرستیژ)"),
+    ("shoval", "شوال", r"\bشوال\b"),
+    ("dignity_prime", "دیگنیتی پرایم", r"دیگنیتی.*(?:پرایم)"),
+    ("dignity_prestige", "دیگنیتی پرستیژ", r"دیگنیتی.*(?:پرستیژ)"),
+    ("inroads_van", "ون اینرودز", r"(?:ون\s*)?اینرودز|inroads"),
+    ("x33", "ام وی ام X33", r"(?:ایکس|x)\s*33"),
+    ("x77", "ام وی ام X77", r"(?:ایکس|x)\s*77"),
+    ("arrizo_6_gt", "آریزو ۶ GT", r"آریزو\s*6.*(?:gt|جی\s*تی)"),
+    ("arrizo_8", "آریزو ۸", r"آریزو\s*8"),
+    ("tiggo_7", "تیگو ۷", r"تیگو\s*7"),
+    ("tiggo_8_promax", "تیگو ۸ پرومکس", r"تیگو\s*8.*(?:پرومکس|pro\s*max)"),
+    ("fx_single_diff", "فونیکس FX تک دیفرانسیل", r"(?:اف\s*ایکس|fx).*(?:تک\s*دف|تک\s*دیف|تک\s*دیفرانسیل)"),
+    ("x55", "ام وی ام X55", r"(?:ایکس|x)\s*55"),
+    ("beijing_u5", "بیجینگ U5", r"بیجینگ\s*(?:u\s*5|u5)"),
+    ("farda_511", "فردا 511", r"فردا\s*511"),
+    ("farda_sx5", "فردا SX5", r"فردا\s*(?:sx\s*5|sx5)"),
+    ("farda_t5", "فردا T5", r"فردا\s*(?:t\s*5|t5)"),
+    ("lamari_ima", "لاماری ایما", r"لاماری\s*ایما"),
+    ("lamari_eco", "لاماری اکو", r"لاماری\s*اکو"),
+    ("lucano_l7", "لوکانو L7", r"لوکانو\s*(?:l\s*7|l7|ال\s*7)"),
+    ("lucano_l8", "لوکانو L8", r"لوکانو\s*(?:l\s*8|l8|ال\s*8)"),
+    ("mazda_3_full", "مزدا ۳ فول", r"مزدا\s*(?:3|۳).*(?:فول)"),
+    ("luna_electric", "لونا برقی", r"لونا.*(?:برقی)"),
+    ("optima_k5", "اپتیما K5", r"اپتیما\s*(?:k\s*5|k5)"),
+    ("camry_2_china", "کمری ۲ لیتری چین", r"کمری.*(?:2|۲)\s*لیتری.*(?:چین)"),
+    ("honda_hrv", "هوندا HR-V", r"هوندا\s*(?:hrv|hr\s*v)"),
+    ("frontlander", "فرانتلندر", r"فراتلندر|فرانتلندر|frontlander"),
+    ("sonata", "سوناتا", r"\bسوناتا\b"),
+    ("corolla_cross", "کرولا کراس", r"کرولا\s*کراس"),
+    ("byd_song_plus", "BYD سانگ پلاس", r"(?:بی\s*وای\s*دی|byd).*(?:سانگ\s*پلاس|song\s*plus)"),
+    ("toyota_chr", "تویوتا CHR", r"تویوتا\s*(?:chr|c\s*h\s*r|سی\s*اچ\s*آر)"),
+    ("levin_1800_hybrid", "لوین ۱۸۰۰ هیبرید", r"لوین\s*(?:1800|۱۸۰۰).*(?:هیبرید)"),
+    ("troc", "تیراک", r"تیراک|t-?roc"),
+    ("honda_ens1", "هوندا ENS1", r"هوندا\s*(?:ens\s*1|ens1)"),
+    ("rav4_china_dual", "تویوتا راو۴ چین دو دیفرانسیل", r"(?:تویوتا\s*)?(?:رافور|راو\s*4|rav\s*4).*(?:چین).*(?:2\s*دف|دو\s*دف|دو\s*دیف|دو\s*دیفرانسیل)"),
+    ("rav4_single_diff", "تویوتا راو۴ تک دیفرانسیل", r"(?:تویوتا\s*)?(?:رافور|راو\s*4|rav\s*4).*(?:تک\s*دف|تک\s*دیف|تک\s*دیفرانسیل)"),
+    ("nissan_altima", "نیسان آلتیما", r"نیسان\s*التیما|altima"),
+    ("qashqai", "نیسان قشقایی", r"قشقایی|qashqai"),
+    ("benz_a180", "بنز A180", r"بنز\s*(?:a\s*180|a180)"),
+    ("camry_china_tita", "کمری چین تیتا", r"کمری.*(?:چین).*(?:تیتا)"),
+    ("camry_japan_pano", "کمری ژاپن سقف پانا", r"کمری.*(?:ژاپن).*(?:پانا|پاناروما|سقف)"),
+    ("elantra_zavina", "النترا زاوینا", r"النترا.*(?:زاوینا)"),
+    ("pride_151_gx", "پراید ۱۵۱ GX پاششی", r"پراید\s*(?:151|۱۵۱).*(?:gx|جی\s*ایکس|پاششی)"),
+    ("arisan", "آریسان", r"آریسان"),
+    ("nissan_dual_ex", "نیسان دوگانه EX", r"نیسان.*(?:دوگانه).*(?:ex|ای\s*ایکس)"),
+    ("nissan_single_ex", "نیسان تک EX", r"نیسان.*(?:تک).*(?:ex|ای\s*ایکس)"),
+]
+
+IMPORTED_YEAR_HINT_RE = re.compile(
+    r"چانگان|changan|cs55|cs35|unit|سیتروئن|citroen|هایما|haima|ایگل|جک|jack|kmc|بک|دیگنیتی|فید|فیدلیتی|رسپکت|ریسپکت|"
+    r"فونیکس|تیگو|آریزو|لاماری|لوکانو|مزدا|لونا|اپتیما|کمری|هوندا|سوناتا|کرولا|"
+    r"byd|بی\s*وای\s*دی|toyota|تویوتا|لوین|تیراک|رافور|راو|rav|nissan|نیسان|قشقایی|benz|بنز|elantra|النترا|فراتلندر|فرانتلندر",
+    re.IGNORECASE,
+)
+
 COLORS = [
     "سفید",
     "مشکی",
@@ -64,6 +180,59 @@ COLORS = [
     "قهوه ای",
     "پرتغالی",
 ]
+
+VEHICLE_NAME_STOP_WORDS_RE = re.compile(
+    r"(?:قیمت|فروش|فوری|تحویل|تماس|تلفن|کارکرد|کیلومتر|برج|مدل|سال|"
+    r"سند|بیمه|حواله|رنگ|موجود|نقد|اقساط|زیر|کف)\b",
+    re.IGNORECASE,
+)
+
+
+def known_vehicle_options() -> list[tuple[str, str]]:
+    """Catalog of all vehicle keys/names known by the parser."""
+    seen: set[str] = set()
+    options: list[tuple[str, str]] = []
+    for key, name, _pattern in [*DETAILED_VEHICLE_PATTERNS, *VEHICLE_PATTERNS]:
+        if key in seen:
+            continue
+        seen.add(key)
+        options.append((key, name))
+    return options
+
+
+def _clean_detected_vehicle_name(text: str, fallback: str) -> str:
+    """Return a compact model name from the actual message text.
+
+    For detailed matches we want the UI to say things like
+    «۲۰۷ دنده پانا ارتقا», not the broad fallback «پژو ۲۰۷».
+    """
+    lines = [line.strip() for line in normalize_text(text).splitlines() if line.strip()]
+    candidates = lines or [normalize_text(text)]
+    best = ""
+    best_score = -1
+    for line in candidates:
+        if len(line) > 120:
+            line = line[:120]
+        before_stop = VEHICLE_NAME_STOP_WORDS_RE.split(line, maxsplit=1)[0]
+        cleaned = before_stop
+        cleaned = re.sub(r"(?<!\d)(?:\+?98|0)?9\d{9}(?!\d)", " ", cleaned)
+        cleaned = re.sub(r"\b(?:14\d{2}|40[0-9]|20[12]\d|2[3-6])\b", " ", cleaned)
+        for color in COLORS:
+            cleaned = re.sub(re.escape(color), " ", cleaned, flags=re.IGNORECASE)
+        cleaned = re.sub(r"\b\d{4,6}\b", " ", cleaned)
+        cleaned = re.sub(r"[#:_،؛|/\\\-]+", " ", cleaned)
+        cleaned = re.sub(r"\s+", " ", cleaned).strip()
+        if not cleaned:
+            continue
+        score = 0
+        if re.search(r"(?:207|۲۰۷|پانا|ارتقا|کوییک|شاهین|تارا|سورن|چانگان|هایما|جک|تیگو|آریزو|لاماری|لوکانو|نیسان)", cleaned, re.IGNORECASE):
+            score += 10
+        score += min(len(cleaned), 70)
+        if score > best_score:
+            best_score = score
+            best = cleaned
+    display = best or fallback
+    return display.translate(str.maketrans("0123456789", "۰۱۲۳۴۵۶۷۸۹"))
 
 BUYER_RE = re.compile(r"خریدار|خریدارم|می\s*خوام|میخوام|مشتری|نیاز\s*دارم")
 SOLD_RE = re.compile(r"انجام\s*شد|فروخته|تمام\s*شد|تموم\s*شد|اوکی\s*شد")
@@ -197,6 +366,9 @@ def split_multi_ad_blocks(raw_text: str) -> list[str]:
 
 def detect_vehicle(text: str) -> tuple[str | None, str | None]:
     lowered = text.lower()
+    for key, name, pattern in DETAILED_VEHICLE_PATTERNS:
+        if re.search(pattern, lowered, flags=re.IGNORECASE):
+            return key, _clean_detected_vehicle_name(text, name)
     for key, name, pattern in VEHICLE_PATTERNS:
         if re.search(pattern, lowered, flags=re.IGNORECASE):
             return key, name
@@ -256,6 +428,10 @@ def detect_year(text: str) -> int | None:
     match = re.search(r"\b(20[12]\d)\b", text)
     if match:
         return int(match.group(1))
+    if IMPORTED_YEAR_HINT_RE.search(text):
+        match = re.search(r"(?<!\d)(2[3-6])(?!\d)", text)
+        if match:
+            return 2000 + int(match.group(1))
     return None
 
 
