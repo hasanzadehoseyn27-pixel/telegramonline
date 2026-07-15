@@ -42,7 +42,6 @@ CHANNELS: list[str] = [
     "ArmanKhdro",
     "rezaee_khodro",
     "autoluxkhodaei",
-    "BAZARBOZORGEKHODROIRAN",
 ]
 
 
