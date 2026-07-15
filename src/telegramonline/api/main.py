@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -24,13 +26,33 @@ app = FastAPI(
     version="0.1.0",
 )
 
+# ---------------------------------------------------------------------------
+# CORS
+# ---------------------------------------------------------------------------
+# دامنه‌های واقعی سایت (پروداکشن) باید توی متغیر محیطی CORS_ALLOWED_ORIGINS
+# با کاما جدا بشن، مثلا:
+#   CORS_ALLOWED_ORIGINS=https://telegramonline.ir,https://www.telegramonline.ir
+# اگر ست نشه، فقط لوکال‌هاست (برای توسعه) مجاز می‌مونه و در نتیجه سایت واقعی
+# با خطای CORS مواجه می‌شه — پس روی سرور حتما این متغیر رو ست کن.
+_DEFAULT_DEV_ORIGINS = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+]
+
+_extra_origins = [
+    origin.strip()
+    for origin in os.getenv("CORS_ALLOWED_ORIGINS", "").split(",")
+    if origin.strip()
+]
+
+# اگر می‌خوای موقتا (فقط برای عیب‌یابی) همه‌ی دامنه‌ها مجاز باشن، این رو ست کن:
+#   CORS_ALLOW_ALL=1
+_allow_all = os.getenv("CORS_ALLOW_ALL", "").strip() == "1"
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-    ],
-    allow_credentials=True,
+    allow_origins=["*"] if _allow_all else [*_DEFAULT_DEV_ORIGINS, *_extra_origins],
+    allow_credentials=not _allow_all,  # allow_credentials با allow_origins=["*"] با هم سازگار نیستن
     allow_methods=["*"],
     allow_headers=["*"],
 )

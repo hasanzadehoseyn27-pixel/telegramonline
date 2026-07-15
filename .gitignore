@@ -1,9 +1,16 @@
 .env
+.env.*
+!.env.example
+!.env.production.example
 *.session
 *.session-journal
+*.session.bak
+*.session-journal.bak
+backups/
 *.sqlite3
 *.db
 __pycache__/
 .pytest_cache/
 .venv/
+node_modules/
 
