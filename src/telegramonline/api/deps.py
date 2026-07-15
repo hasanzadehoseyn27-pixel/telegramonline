@@ -5,7 +5,7 @@ from functools import lru_cache
 from sqlite3 import Connection
 
 from telegramonline.config import Settings
-from telegramonline.storage import connect
+from telegramonline.storage import connect_for_request
 
 
 @lru_cache(maxsize=1)
@@ -15,7 +15,7 @@ def get_settings() -> Settings:
 
 def get_db() -> Generator[Connection, None, None]:
     settings = get_settings()
-    conn = connect(settings.database_path)
+    conn = connect_for_request(settings.database_path)
     try:
         yield conn
     finally:

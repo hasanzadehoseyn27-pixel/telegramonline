@@ -5,6 +5,7 @@ import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from telegramonline.api.deps import get_settings
 from telegramonline.api.routes import (
     ads,
     alerts,
@@ -20,11 +21,17 @@ from telegramonline.api.routes import (
     vehicles,
     websocket,
 )
+from telegramonline.storage import ensure_schema
 
 app = FastAPI(
     title="TelegramOnline API",
     version="0.1.0",
 )
+
+
+@app.on_event("startup")
+def _ensure_db_schema() -> None:
+    ensure_schema(get_settings().database_path)
 
 # ---------------------------------------------------------------------------
 # CORS

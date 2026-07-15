@@ -135,6 +135,12 @@ ON alert_events(ad_id);
 """
 
 def connect(db_path: str | Path) -> sqlite3.Connection:
+    """اتصال «کامل»: اسکیما/ایندکس‌ها/مهاجرت ستون‌ها را هم تضمین می‌کند.
+
+    برای استفاده‌ی یک‌باره در شروع برنامه (API startup) یا فرآیندهای
+    تک‌رشته‌ای مثل collector.py مناسب است. برای هر ریکوئست وب از
+    connect_for_request استفاده کن که سبک‌تر و thread-safe است.
+    """
     path = Path(db_path)
     path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(path)
@@ -142,6 +148,32 @@ def connect(db_path: str | Path) -> sqlite3.Connection:
     conn.executescript(TABLE_SCHEMA)
     _ensure_columns(conn)
     conn.executescript(INDEX_SCHEMA)
+    return conn
+
+
+def ensure_schema(db_path: str | Path) -> None:
+    """فقط اسکیما/مهاجرت را تضمین می‌کند (بدون نگه‌داشتن کانکشن باز).
+
+    باید یک‌بار موقع بالا آمدن API صدا زده شود.
+    """
+    connect(db_path).close()
+
+
+def connect_for_request(db_path: str | Path) -> sqlite3.Connection:
+    """اتصال سبک برای هر ریکوئست FastAPI.
+
+    FastAPI دیپندنسی‌های sync generator را داخل یک thread pool اجرا می‌کند
+    و ورود/خروج generator ممکن است روی دو OS thread متفاوت اتفاق بیفتد؛
+    چون هر کانکشن فقط در طول یک ریکوئست استفاده می‌شود (هیچ‌وقت هم‌زمان
+    بین دو ریکوئست به اشتراک گذاشته نمی‌شود)، غیرفعال‌کردن چک
+    same-thread اینجا امن است و از خطای
+    «SQLite objects created in a thread can only be used in that same thread»
+    جلوگیری می‌کند. اسکیما را دوباره نمی‌سازد (چون در startup ساخته شده).
+    """
+    path = Path(db_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(path, check_same_thread=False)
+    conn.row_factory = sqlite3.Row
     return conn
 
 
