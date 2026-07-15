@@ -391,9 +391,23 @@ def _clean_username(raw: str) -> str:
 
 
 def add_channel(conn: sqlite3.Connection, username: str, title: str | None = None) -> int | None:
-    """کانال جدید اضافه می‌کند. اگر تکراری باشد None برمی‌گرداند."""
+    """کانال جدید اضافه می‌کند. اگر تکراری بود، همون رکورد موجود را فعال می‌کند."""
     clean = _clean_username(username)
     if not clean:
+        return None
+    try:
+        cursor = conn.execute(
+            "INSERT INTO channels (username, title) VALUES (?, ?)",
+            (clean, title),
+        )
+        conn.commit()
+        return cursor.lastrowid
+    except sqlite3.IntegrityError:
+        row = conn.execute("SELECT id FROM channels WHERE username = ?", (clean,)).fetchone()
+        if row:
+            conn.execute("UPDATE channels SET active = 1 WHERE id = ?", (row["id"],))
+            conn.commit()
+            return row["id"]
         return None
 
 
