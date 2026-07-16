@@ -37,7 +37,9 @@ export default function Channels() {
             </div>
             <div className="mt-1 text-sm text-slate-400">
               مجموع امروز: {formatNumber(data?.summary.messages_today ?? 0)} پیام از{" "}
-              {formatNumber(data?.summary.active_channels ?? 0)} کانال فعال
+              {formatNumber(data?.summary.active_channels ?? 0)} کانال فعال ·{" "}
+              {formatNumber(data?.summary.joined_channels ?? 0)} از{" "}
+              {formatNumber(data?.summary.total_channels ?? 0)} کانال عضو شده
             </div>
           </div>
           <div className="flex h-11 overflow-hidden rounded-lg border border-white/10 bg-slate-950/70">

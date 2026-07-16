@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import time
 from datetime import datetime, timedelta, timezone
 
 from telethon import TelegramClient, events
@@ -160,6 +161,24 @@ async def add_and_activate_channel(client: TelegramClient, conn, username: str, 
 
 MAX_JOIN_ATTEMPTS = 5
 
+# برای اینکه تلگرام یهو محدودیت نرخ (FloodWait) نذاره، به‌جای اینکه هر ۳۰
+# ثانیه سعی کنیم همه‌ی کانال‌های جدید رو یکجا join کنیم، فقط هر ۱۵ دقیقه
+# (یک ربع) اجازه‌ی یک‌بار تلاش برای join یک کانال/گروه جدید داریم — چه از
+# طریق «لیست کانال‌ها» چه «گروه‌های منبع» (سهمیه مشترکه).
+JOIN_PACE_SECONDS = 15 * 60
+# منفی شروع می‌شه تا اولین فراخوانی همیشه مجاز باشه، صرف‌نظر از اینکه
+# time.monotonic() از چه عددی شروع می‌کنه (بستگی به مدت روشن‌بودن سیستم داره).
+_last_join_attempt_at: float = -JOIN_PACE_SECONDS
+
+
+def _may_attempt_join_now() -> bool:
+    global _last_join_attempt_at
+    now = time.monotonic()
+    if now - _last_join_attempt_at < JOIN_PACE_SECONDS:
+        return False
+    _last_join_attempt_at = now
+    return True
+
 
 async def sync_channels(client: TelegramClient, conn) -> set[str]:
     """کانال‌های ثبت‌شده‌ی هنوز-عضونشده را عضو و بک‌فیل امروز می‌کند.
@@ -174,6 +193,8 @@ async def sync_channels(client: TelegramClient, conn) -> set[str]:
     اضافه‌اش کند.
     """
     for channel in list_unjoined_channels(conn):
+        if not _may_attempt_join_now():
+            break
         username = channel["username"]
         print(f"🆕 کانال جدید شناسایی شد: {username} — در حال عضویت و بک‌فیل امروز...", flush=True)
         try:
@@ -202,7 +223,7 @@ async def sync_channels(client: TelegramClient, conn) -> set[str]:
                     f"❌ کانال {username} عضو نشد؛ تلاش {attempts}/{MAX_JOIN_ATTEMPTS}، در دور بعد دوباره تلاش می‌شود.",
                     flush=True,
                 )
-            continue
+            break
         title = channel["title"]
         try:
             entity = await client.get_entity(username)
@@ -212,6 +233,7 @@ async def sync_channels(client: TelegramClient, conn) -> set[str]:
         mark_channel_joined(conn, channel["id"], title=title)
         inserted = await backfill_today(client, conn, channel["id"], username)
         print(f"✅ کانال {username} فعال شد ({inserted} پیام امروز).", flush=True)
+        break
 
     for channel in list_channels_pending_leave(conn):
         username = channel["username"]
@@ -229,6 +251,8 @@ async def sync_channels(client: TelegramClient, conn) -> set[str]:
 
 async def sync_source_groups(client: TelegramClient, conn) -> set[str]:
     for group in list_unjoined_source_groups(conn):
+        if not _may_attempt_join_now():
+            break
         username = group["username"]
         print(f"source group discovered: {username}; joining...", flush=True)
         try:
@@ -249,7 +273,7 @@ async def sync_source_groups(client: TelegramClient, conn) -> set[str]:
                 )
             else:
                 print(f"source group join failed: {username} (attempt {attempts}/{MAX_JOIN_ATTEMPTS})", flush=True)
-            continue
+            break
         title = group["title"]
         try:
             entity = await client.get_entity(username)
@@ -258,6 +282,7 @@ async def sync_source_groups(client: TelegramClient, conn) -> set[str]:
             pass
         mark_source_group_joined(conn, group["id"], title=title)
         print(f"source group is active: {username}", flush=True)
+        break
 
     for group in list_source_groups_pending_leave(conn):
         username = group["username"]
@@ -313,6 +338,11 @@ async def discover_forwarded_channel_from_group(
         print(f"forwarded channel discovered from {group_username}: {origin_username}", flush=True)
     else:
         channel_id = existing["id"]
+
+    if not _may_attempt_join_now():
+        # سهمیه‌ی join این چرخه قبلاً استفاده شده؛ چون ردیف کانال از قبل در
+        # دیتابیس ثبت شده، حلقه‌ی paced sync_channels خودش بعداً join می‌کند.
+        return
 
     try:
         joined = await join_channel(client, origin_username)

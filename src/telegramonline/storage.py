@@ -725,6 +725,16 @@ def get_live_channel_stats(
             "messages_today": int(
                 total_today["c"] or 0
             ),
+
+            "joined_channels": len(
+                [
+                    x
+                    for x in result
+                    if x["joined"]
+                ]
+            ),
+
+            "total_channels": len(result),
         },
     }
 

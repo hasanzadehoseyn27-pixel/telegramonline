@@ -16,6 +16,8 @@ export interface ChannelLiveResponse {
   summary: {
     active_channels: number;
     messages_today: number;
+    joined_channels: number;
+    total_channels: number;
   };
 }
 

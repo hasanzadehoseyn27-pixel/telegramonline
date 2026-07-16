@@ -249,6 +249,8 @@ class ChannelLiveOut(BaseModel):
 class ChannelLiveSummary(BaseModel):
     active_channels: int
     messages_today: int
+    joined_channels: int
+    total_channels: int
 
 
 class ChannelLiveResponse(BaseModel):
