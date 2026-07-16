@@ -13,7 +13,7 @@ import { NavLink } from "react-router-dom";
 
 const desktopMenu = [
   { title: "داشبورد", icon: LayoutDashboard, path: "/" },
-  { title: "آگهی‌ها", icon: Car, path: "/ads" },
+  { title: "همه آگهی‌ها", icon: Car, path: "/ads" },
   { title: "کمترین", icon: Flame, path: "/cheapest" },
   { title: "کانال‌ها", icon: Radio, path: "/channels" },
   { title: "هشدار", icon: Bell, path: "/alerts" },

@@ -12,12 +12,14 @@ from telegramonline.api.schemas import (
 )
 from telegramonline.storage import (
     create_price_alert,
+    delete_all_price_alerts,
     delete_price_alert,
     get_price_alert,
     list_price_alerts,
     toggle_price_alert,
     list_alert_events,
     count_alert_events,
+    mark_alert_events_read,
 )
 
 from telegramonline.api.schemas import (
@@ -189,3 +191,20 @@ def get_alert_events_count(
     return AlertEventCountOut(
         count=count_alert_events(db)
     )
+
+
+@router.post("/events/mark-read")
+def mark_events_read(
+    db: Connection = Depends(get_db),
+):
+    marked = mark_alert_events_read(db)
+    return {"ok": True, "marked": marked}
+
+
+@router.delete("")
+def remove_all_alerts(
+    user_id: int,
+    db: Connection = Depends(get_db),
+):
+    deleted = delete_all_price_alerts(db, user_id)
+    return {"ok": True, "deleted": deleted}

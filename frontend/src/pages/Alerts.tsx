@@ -1,7 +1,15 @@
 import { Bell, ExternalLink, Plus, Trash2 } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
-import { createAlert, getAlertEvents, getAlerts, removeAlert, toggleAlert } from "../api/alerts.api";
+import { useEffect, useMemo, useState } from "react";
+import {
+  createAlert,
+  getAlertEvents,
+  getAlerts,
+  markAlertEventsRead,
+  removeAlert,
+  removeAllAlerts,
+  toggleAlert,
+} from "../api/alerts.api";
 import { getFilterOptions } from "../api/filters.api";
 import FormattedNumberInput from "../components/common/FormattedNumberInput";
 import { formatDateTime, formatNumber } from "../utils/format";
@@ -14,6 +22,13 @@ export default function Alerts() {
   const [minPrice, setMinPrice] = useState<number>();
   const [maxPrice, setMaxPrice] = useState<number>();
   const queryClient = useQueryClient();
+
+  // با باز شدن صفحه، هشدارها «خوانده‌شده» علامت می‌خورن تا عدد قرمز زنگوله برگرده صفر
+  useEffect(() => {
+    markAlertEventsRead().then(() => {
+      queryClient.invalidateQueries({ queryKey: ["alerts", "events-count"] });
+    });
+  }, [queryClient]);
 
   const { data: filterOptions } = useQuery({
     queryKey: ["filters", "options"],
@@ -46,6 +61,11 @@ export default function Alerts() {
 
   const removeMutation = useMutation({
     mutationFn: removeAlert,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["alerts"] }),
+  });
+
+  const removeAllMutation = useMutation({
+    mutationFn: () => removeAllAlerts(1),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["alerts"] }),
   });
 
@@ -134,6 +154,16 @@ export default function Alerts() {
         </div>
 
         <div className="mt-6 space-y-2">
+          {alerts.length > 0 && (
+            <button
+              onClick={() => removeAllMutation.mutate()}
+              disabled={removeAllMutation.isPending}
+              className="mb-1 flex h-9 w-full items-center justify-center gap-2 rounded-lg bg-white/5 text-xs font-bold text-rose-200 transition hover:bg-rose-500/20 disabled:opacity-50"
+            >
+              <Trash2 size={14} />
+              پاک کردن همه‌ی هشدارها
+            </button>
+          )}
           {alerts.map((alert) => (
             <div key={alert.id} className="rounded-lg border border-white/10 bg-white/5 p-3">
               <div className="flex items-center justify-between">

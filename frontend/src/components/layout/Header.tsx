@@ -19,7 +19,7 @@ export default function Header({ theme, onToggleTheme }: Props) {
   });
 
   return (
-    <header className="glass-panel fixed left-0 right-64 top-0 z-20 flex h-20 items-center justify-between gap-3 px-4 max-lg:right-0 max-sm:h-16 lg:px-7">
+    <header className="glass-panel fixed left-0 right-64 top-0 z-20 relative flex h-20 items-center justify-between gap-3 px-4 max-lg:right-0 max-sm:h-16 lg:px-7">
       <div className="flex items-center gap-2 sm:gap-3">
         <button
           aria-label="تنظیمات و گزارش‌ها"
@@ -55,13 +55,16 @@ export default function Header({ theme, onToggleTheme }: Props) {
         </button>
       </div>
 
-      <div className="min-w-0 flex-1 text-left max-md:hidden">
-        <h1 className="truncate text-base font-black lg:text-xl">داشبورد زنده TelegramOnline</h1>
-        <p className="mt-1 truncate text-xs text-slate-400 theme-muted">پایش لحظه‌ای آگهی‌های خودرو از کانال‌های تلگرام</p>
+      <div className="pointer-events-none absolute inset-0 flex items-center justify-center max-sm:hidden">
+        <div className="pointer-events-auto">
+          <LiveClock />
+        </div>
       </div>
 
-      <div className="max-sm:hidden">
-        <LiveClock compact />
+      <div className="flex-1 max-sm:flex max-sm:justify-end">
+        <div className="sm:hidden">
+          <LiveClock compact />
+        </div>
       </div>
     </header>
   );

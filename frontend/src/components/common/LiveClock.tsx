@@ -26,14 +26,15 @@ export default function LiveClock({ compact = false }: { compact?: boolean }) {
   return (
     <div
       className={[
-        "flex items-center gap-2 rounded-xl border border-cyan-300/20 bg-cyan-300/10 text-cyan-50 shadow-lg shadow-cyan-950/10",
-        compact ? "px-3 py-2 text-xs" : "px-4 py-3 text-sm",
+        "group relative flex items-center gap-2 overflow-hidden rounded-2xl border border-cyan-300/25 bg-gradient-to-l from-cyan-300/15 via-slate-900/40 to-fuchsia-400/10 text-cyan-50 shadow-lg shadow-cyan-950/20 backdrop-blur-sm transition-transform hover:scale-[1.02]",
+        compact ? "px-3 py-2 text-xs" : "px-5 py-2.5 text-sm",
       ].join(" ")}
     >
-      <span className="grid h-8 w-8 place-items-center rounded-lg bg-cyan-300 text-slate-950">
-        <Clock size={17} />
+      <span className="pointer-events-none absolute inset-0 -translate-x-full bg-gradient-to-l from-transparent via-white/10 to-transparent transition-transform duration-1000 group-hover:translate-x-0" />
+      <span className="relative grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-gradient-to-br from-cyan-300 to-cyan-500 text-slate-950 shadow-md shadow-cyan-500/30">
+        <Clock size={17} className="animate-[spin_8s_linear_infinite]" />
       </span>
-      <span className="font-black leading-6">{formatted}</span>
+      <span className="relative font-black leading-6 tracking-wide">{formatted}</span>
     </div>
   );
 }

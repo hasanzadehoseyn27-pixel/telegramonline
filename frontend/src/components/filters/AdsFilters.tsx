@@ -44,7 +44,7 @@ export default function AdsFilters() {
         </button>
       </div>
 
-      <div className="space-y-4 overflow-y-auto pl-1 scroll-area">
+      <div className="space-y-2.5 overflow-y-auto pl-1 scroll-area">
         <label className="block">
           <span className="text-xs font-semibold text-slate-400">جستجو</span>
           <div className="mt-2 flex h-11 items-center gap-2 rounded-lg border border-white/10 bg-slate-950/70 px-3">

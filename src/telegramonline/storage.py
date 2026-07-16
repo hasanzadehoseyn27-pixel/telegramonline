@@ -97,6 +97,8 @@ CREATE TABLE IF NOT EXISTS alert_events (
 
     price_million INTEGER,
 
+    is_read INTEGER NOT NULL DEFAULT 0,
+
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     UNIQUE(alert_id, ad_id)
@@ -245,6 +247,15 @@ def _ensure_columns(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE channels ADD COLUMN joined INTEGER NOT NULL DEFAULT 0")
     if existing_channels_cols and "join_attempts" not in existing_channels_cols:
         conn.execute("ALTER TABLE channels ADD COLUMN join_attempts INTEGER NOT NULL DEFAULT 0")
+    existing_alert_events_cols = set()
+    try:
+        existing_alert_events_cols = {
+            row["name"] for row in conn.execute("PRAGMA table_info(alert_events)").fetchall()
+        }
+    except sqlite3.OperationalError:
+        pass
+    if existing_alert_events_cols and "is_read" not in existing_alert_events_cols:
+        conn.execute("ALTER TABLE alert_events ADD COLUMN is_read INTEGER NOT NULL DEFAULT 0")
     existing_groups_cols = set()
     try:
         existing_groups_cols = {
@@ -1165,17 +1176,41 @@ def count_alert_events(
     conn: sqlite3.Connection,
 ) -> int:
     """
-    تعداد کل رخدادهای هشدار.
+    تعداد رخدادهای هشدارِ خوانده‌نشده (برای نشان قرمز روی زنگوله).
     """
 
     row = conn.execute(
         """
         SELECT COUNT(*) AS c
         FROM alert_events
+        WHERE is_read = 0
         """
     ).fetchone()
 
     return int(row["c"] or 0)
+
+
+def mark_alert_events_read(conn: sqlite3.Connection) -> int:
+    """همه‌ی رخدادهای هشدار را «خوانده‌شده» علامت می‌زند (وقتی کاربر صفحه‌ی
+    هشدارها را باز می‌کند)، تا نشان قرمز روی زنگوله دیگر باقی نماند."""
+    cursor = conn.execute("UPDATE alert_events SET is_read = 1 WHERE is_read = 0")
+    conn.commit()
+    return cursor.rowcount
+
+
+def delete_all_price_alerts(conn: sqlite3.Connection, user_id: int) -> int:
+    """همه‌ی هشدارهای قیمتِ یک کاربر را حذف می‌کند (و رخدادهای مربوطشان را هم،
+    چون alert_id دیگر معتبر نیست)."""
+    alert_ids = [
+        row["id"]
+        for row in conn.execute("SELECT id FROM price_alerts WHERE user_id = ?", (user_id,)).fetchall()
+    ]
+    if alert_ids:
+        placeholders = ", ".join("?" for _ in alert_ids)
+        conn.execute(f"DELETE FROM alert_events WHERE alert_id IN ({placeholders})", alert_ids)
+    cursor = conn.execute("DELETE FROM price_alerts WHERE user_id = ?", (user_id,))
+    conn.commit()
+    return cursor.rowcount
 
 # ---------------------------------------------------------------------------
 # جست‌وجوی متنی آگهی‌ها بر اساس نام ماشینی که کاربر وارد کرده
