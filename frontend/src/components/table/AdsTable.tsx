@@ -58,8 +58,8 @@ export default function AdsTable() {
   }
 
   return (
-    <>
-      <div className="glass-panel flex h-full min-h-0 flex-col overflow-hidden rounded-xl">
+    <div className="flex h-full min-h-0 flex-col gap-3">
+      <div className="glass-panel flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 px-3 py-3 sm:px-4">
           <div>
             <div className="text-sm font-black">جدول آگهی‌های امروز</div>
@@ -232,7 +232,7 @@ export default function AdsTable() {
       </div>
 
       {pageCount > 1 && (
-        <div className="glass-panel mt-3 flex items-center justify-between gap-3 rounded-xl p-3">
+        <div className="glass-panel flex shrink-0 items-center justify-between gap-3 rounded-xl p-3">
           <button
             type="button"
             onClick={() => setFilters({ offset: Math.max(0, offset - pageSize) })}
@@ -258,6 +258,6 @@ export default function AdsTable() {
       )}
 
       {selectedAdId && <AdDetailModal adId={selectedAdId} onClose={() => setSelectedAdId(undefined)} />}
-    </>
+    </div>
   );
 }

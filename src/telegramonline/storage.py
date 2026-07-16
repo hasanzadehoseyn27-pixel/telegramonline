@@ -517,15 +517,6 @@ def list_source_groups(conn: sqlite3.Connection) -> list[dict]:
         }
         for row in rows
     ]
-    try:
-        cursor = conn.execute(
-            "INSERT INTO channels (username, title) VALUES (?, ?)",
-            (clean, title),
-        )
-        conn.commit()
-        return cursor.lastrowid
-    except sqlite3.IntegrityError:
-        return None
 
 
 def delete_ads_by_channel_username(conn: sqlite3.Connection, username: str) -> int:
