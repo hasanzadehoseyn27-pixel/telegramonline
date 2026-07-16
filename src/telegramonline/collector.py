@@ -468,11 +468,56 @@ def purge_now_cli() -> None:
     print(f"🧹 {deleted} ردیف قدیمی‌تر از دیروز حذف شد.")
 
 
+async def rebackfill_all_cli() -> None:
+    """همه‌ی کانال‌های فعال را دوباره از نیمه‌شب می‌خواند.
+
+    برای وقتی که به هر دلیلی (قطعی پروکسی، خاموش‌بودن collector برای مدتی)
+    مشکوکی که همه‌ی پیام‌های امروز واقعاً دریافت نشده‌اند. save_ads بر مبنای
+    dedup_key کار می‌کند، پس آگهی‌های تکراری دوباره ذخیره نمی‌شوند و فقط
+    آگهی‌های جاافتاده اضافه می‌شوند.
+    """
+    settings = Settings.from_env()
+    conn = connect(settings.database_path)
+    proxy = parse_proxy_from_env()
+    if proxy:
+        print("Using Telegram proxy from TELEGRAM_PROXY.", flush=True)
+    client = TelegramClient(
+        "telegramonline_user",
+        settings.api_id,
+        settings.api_hash,
+        proxy=proxy,
+        connection_retries=None,
+        retry_delay=2,
+        auto_reconnect=True,
+    )
+    await client.start()
+
+    channels = list_active_joined_channels(conn)
+    print(f"در حال دوباره‌خوانی {len(channels)} کانال از نیمه‌شب...", flush=True)
+    total_inserted = 0
+    for channel in channels:
+        username = channel["username"]
+        try:
+            inserted = await backfill_today(client, conn, channel["id"], username)
+            total_inserted += inserted
+            print(f"  {username}: {inserted} آگهی (جدید یا جاافتاده)", flush=True)
+        except Exception as exc:  # noqa: BLE001
+            print(f"  ⚠️ {username}: خطا — {exc}", flush=True)
+
+    print(f"✅ تمام شد. مجموعاً {total_inserted} آگهی جدید/جاافتاده اضافه شد.", flush=True)
+    await client.disconnect()
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Collect Telegram channel ads with a Telethon user session.")
     parser.add_argument("--add-channel", help="Add and activate a public channel by username, then exit.")
     parser.add_argument("--purge-channel-ads", help="Delete all stored ads for a channel username, then exit.")
     parser.add_argument("--purge-now", action="store_true", help="Delete everything older than yesterday, then exit.")
+    parser.add_argument(
+        "--rebackfill-all",
+        action="store_true",
+        help="Re-read every active channel's messages since midnight (fills in anything missed), then exit.",
+    )
     args = parser.parse_args()
     if args.add_channel:
         asyncio.run(add_channel_cli(args.add_channel))
@@ -480,6 +525,8 @@ def main() -> None:
         purge_channel_ads_cli(args.purge_channel_ads)
     elif args.purge_now:
         purge_now_cli()
+    elif args.rebackfill_all:
+        asyncio.run(rebackfill_all_cli())
     else:
         asyncio.run(run_forever())
 
