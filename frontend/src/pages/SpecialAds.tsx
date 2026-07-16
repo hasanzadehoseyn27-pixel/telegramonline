@@ -11,16 +11,18 @@ const ALL_KEYS = CURATED_VEHICLES.map((v) => v.key);
 
 export default function SpecialAds() {
   const [query, setQuery] = useState("");
+  const [tableSearch, setTableSearch] = useState("");
   const [day, setDay] = useState<"today" | "yesterday">("today");
   const [page, setPage] = useState(0);
   const [selectedAdId, setSelectedAdId] = useState<number>();
 
   const { data: adsPage, isLoading } = useQuery({
-    queryKey: ["special-ads", day, page],
+    queryKey: ["special-ads", day, page, tableSearch],
     queryFn: () =>
       getPricedAds({
         vehicleKeys: ALL_KEYS,
         day,
+        search: tableSearch || undefined,
         limit: PAGE_SIZE,
         offset: page * PAGE_SIZE,
       }),
@@ -39,7 +41,7 @@ export default function SpecialAds() {
 
   return (
     <>
-      <div className="grid h-full min-h-0 grid-cols-[320px_minmax(0,1fr)] gap-4 max-xl:grid-cols-1">
+      <div className="grid h-full min-h-0 grid-cols-[320px_minmax(0,1fr)] grid-rows-[minmax(0,1fr)] gap-4 max-xl:grid-cols-1 max-xl:grid-rows-[auto_minmax(0,1fr)]">
         <section className="glass-panel flex min-h-0 flex-col overflow-hidden rounded-xl p-4">
           <div className="mb-1 flex items-center gap-2 text-xl font-black">
             <Sparkles className="text-cyan-200" />
@@ -79,12 +81,24 @@ export default function SpecialAds() {
 
         <div className="grid min-h-0 grid-rows-[minmax(0,1fr)_auto] gap-3">
           <section className="glass-panel flex min-h-0 flex-col overflow-hidden rounded-xl">
-            <div className="flex items-center justify-between gap-3 border-b border-white/10 p-4">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 p-4">
               <div>
                 <div className="font-black">آگهی‌های مدل‌های خاص</div>
                 <div className="mt-1 text-xs text-slate-400">
                   {formatCount(ads.length)} از {formatCount(total)} آگهی
                 </div>
+              </div>
+              <div className="flex h-9 min-w-0 flex-1 items-center gap-2 rounded-lg border border-white/10 bg-slate-950/70 px-3 sm:max-w-64">
+                <Search size={14} className="shrink-0 text-slate-500" />
+                <input
+                  value={tableSearch}
+                  onChange={(event) => {
+                    setTableSearch(event.target.value);
+                    setPage(0);
+                  }}
+                  placeholder="جستجو در همین جدول..."
+                  className="min-w-0 flex-1 bg-transparent text-xs outline-none"
+                />
               </div>
               <div className="flex h-9 shrink-0 overflow-hidden rounded-lg bg-white/10 text-xs font-black">
                 <button
