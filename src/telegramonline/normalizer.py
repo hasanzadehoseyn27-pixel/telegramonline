@@ -53,6 +53,11 @@ TRANSLATION_TABLE = str.maketrans(
 
 def normalize_text(text: str) -> str:
     text = text.translate(TRANSLATION_TABLE)
+    # فاصله‌گذاری بین رقم و حرف فارسی چسبیده (مثلاً «۲۰۷هیدرولیک»، «سورن405»،
+    # «تارا4مشکی»). بدون این، خیلی از الگوهای regex که روی \b تکیه می‌کنن کار
+    # نمی‌کنن، چون \b بین رقم و حرف فارسی مرزی نمی‌بینه (هر دو \w حساب می‌شن).
+    text = re.sub(r"(?<=[0-9])(?=[آ-ی])", " ", text)
+    text = re.sub(r"(?<=[آ-ی])(?=[0-9])", " ", text)
     text = re.sub(r"\s*([./,])\s*", r"\1", text)
     text = re.sub(r"(?<!\d)([1-9])[ \t]+(\d{3})[ \t]+000[ \t]+000(?!\d)", r"\1/\2/000", text)
     text = re.sub(r"(?<!\d)([1-9])[ \t]+(\d{3})(?!\d)", r"\1/\2", text)

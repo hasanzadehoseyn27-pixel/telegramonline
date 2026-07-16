@@ -1185,8 +1185,14 @@ def _search_filters(query: str) -> tuple[str, list[object]]:
     """کوئری کاربر را نرمال می‌کند و شرط LIKE می‌سازد.
 
     چند کلمه با فاصله => همه باید در متن باشند (AND).
+
+    میان‌بر: اگر کل کوئری دقیقاً «نامشخص» باشد، به‌جای سرچ متنی (که هیچ‌وقت
+    نتیجه نمی‌دهد، چون «نامشخص» فقط یک متن نمایشی در فرانت است و هیچ‌وقت در
+    دیتابیس ذخیره نمی‌شود)، همه‌ی آگهی‌های بدون vehicle_key را برمی‌گرداند.
     """
     normalized = compact_text(query)
+    if normalized == "نامشخص":
+        return "vehicle_key IS NULL", []
     words = [w for w in normalized.split(" ") if w]
     conditions = []
     params: list[object] = []
