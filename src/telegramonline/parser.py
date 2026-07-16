@@ -212,6 +212,20 @@ _SIGNATURE_LINE_RE = re.compile(r"@\w+|کانال\s*(?:ما|رسمی)|t\.me/|ins
 # کارکرد/مدارک) همیشه متادیتا هستند، نه عنوان خودرو — حتی اگر طولانی‌تر از
 # خط اسم واقعی باشند.
 _FIELD_MARKER_LINE_RE = re.compile(r"^[💰📞🏷📍🔧📄☎️✨🔴🟢⚪️⚫️🟡]")
+# خطوطی که بیشترشون هشتگ هستن (مثلاً برای سئو/جستجوی داخل کانال) عنوان
+# واقعی خودرو نیستن، حتی اگه به‌خاطر تعداد کلمه‌ی زیاد امتیاز بالایی بگیرن.
+_HASHTAG_LINE_RE = re.compile(r"^#|(?:#\S+\s*){2,}")
+_EMOJI_RE = re.compile(
+    "["
+    "\U0001F300-\U0001FAFF"
+    "\U00002600-\U000027BF"
+    "\U0001F1E6-\U0001F1FF"
+    "\u2190-\u21FF"
+    "\u2B00-\u2BFF"
+    "\uFE0F"
+    "]+",
+    flags=re.UNICODE,
+)
 
 
 def _clean_detected_vehicle_name(text: str, fallback: str) -> str:
@@ -225,7 +239,7 @@ def _clean_detected_vehicle_name(text: str, fallback: str) -> str:
     best = ""
     best_score = -1
     for line in candidates:
-        if _SIGNATURE_LINE_RE.search(line) or _FIELD_MARKER_LINE_RE.match(line):
+        if _SIGNATURE_LINE_RE.search(line) or _FIELD_MARKER_LINE_RE.match(line) or _HASHTAG_LINE_RE.search(line):
             continue
         if len(line) > 120:
             line = line[:120]
@@ -237,6 +251,7 @@ def _clean_detected_vehicle_name(text: str, fallback: str) -> str:
             cleaned = re.sub(re.escape(color), " ", cleaned, flags=re.IGNORECASE)
         cleaned = re.sub(r"\b\d{4,6}\b", " ", cleaned)
         cleaned = re.sub(r"[#:_،؛|/\\\-]+", " ", cleaned)
+        cleaned = _EMOJI_RE.sub(" ", cleaned)
         cleaned = re.sub(r"\s+", " ", cleaned).strip()
         if not cleaned:
             continue
@@ -380,6 +395,13 @@ def split_multi_ad_blocks(raw_text: str) -> list[str]:
     return _split_by_price_lines(raw_text)
 
 
+# پژو 207 ده‌ها تریم متفاوت داره (پانا، پانورما، اتومات، هیدرولیک، فلز...)
+# که نوشتن یک الگوی تفصیلی جدا برای هرکدوم عملاً غیرممکنه. برای این کلیدها،
+# به‌جای یک vehicle_key ثابت برای همه‌ی تریم‌ها، از روی متن تمیزشده یک کلید
+# مجزا می‌سازیم تا در «کمترین قیمت» تریم‌های مختلف با هم قاطی نشوند.
+SPLIT_BY_EXTRACTED_NAME_KEYS = {"peugeot_207"}
+
+
 def detect_vehicle(text: str, original_text: str | None = None) -> tuple[str | None, str | None]:
     """text باید نسخه‌ی compact (تک‌خطی) باشد تا الگوهایی که چند تکه را با
     lookahead روی خطوط مختلف پیدا می‌کنند درست کار کنند. original_text (اگر
@@ -399,7 +421,11 @@ def detect_vehicle(text: str, original_text: str | None = None) -> tuple[str | N
             # «پژو 207»)، سعی می‌کنیم اسم دقیق‌تری که فروشنده واقعاً نوشته
             # (مثلاً «۲۰۷ دنده پانورما با رینگ شرکتی») رو از خود پیام دربیاریم.
             # اگر چیز بهتری پیدا نشد، همون اسم ثابت fallback می‌مونه.
-            return key, _clean_detected_vehicle_name(original_text or text, name)
+            cleaned = _clean_detected_vehicle_name(original_text or text, name)
+            if key in SPLIT_BY_EXTRACTED_NAME_KEYS and cleaned and cleaned != name:
+                derived_key = f"{key}::{cleaned}"
+                return derived_key, cleaned
+            return key, cleaned
     return None, None
 
 

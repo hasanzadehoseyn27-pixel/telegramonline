@@ -150,7 +150,39 @@ def connect(db_path: str | Path) -> sqlite3.Connection:
     conn.executescript(TABLE_SCHEMA)
     _ensure_columns(conn)
     conn.executescript(INDEX_SCHEMA)
+    _dedupe_ads_by_content(conn)
     return conn
+
+
+def _dedupe_ads_by_content(conn: sqlite3.Connection) -> None:
+    """آگهی‌های تکراری واقعی (همون متن، پیام تلگرام جدید) را پاک می‌کند.
+
+    قبلاً محدودیت یکتایی فقط روی (channel_id, source_message_id, raw_text)
+    بود — یعنی اگه فروشنده‌ای عین همون متن رو با پیام تلگرام *جدید* (شماره
+    پیام متفاوت) دوباره می‌فرستاد، هیچ‌وقت تکراری تشخیص داده نمی‌شد، چون
+    ستون dedup_key هیچ‌وقت واقعاً یکتا اعمال نشده بود (فقط ایندکس معمولی
+    داشت، نه ایندکس یکتا). این تابع اول رکوردهای تکراریِ موجود را (بر اساس
+    channel_id + dedup_key، فقط جدیدترین را نگه می‌دارد) پاک می‌کند، بعد یک
+    ایندکس یکتا می‌سازد تا از این به بعد چنین تکراری‌هایی اصلاً insert
+    نشوند (INSERT OR IGNORE در save_ads این‌جوری خودش رد می‌کند).
+    """
+    conn.execute(
+        """
+        DELETE FROM ads
+        WHERE dedup_key != ''
+          AND id NOT IN (
+              SELECT MAX(id) FROM ads WHERE dedup_key != '' GROUP BY channel_id, dedup_key
+          )
+        """
+    )
+    conn.execute(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_ads_dedup_unique
+        ON ads(channel_id, dedup_key)
+        WHERE dedup_key != ''
+        """
+    )
+    conn.commit()
 
 
 def ensure_schema(db_path: str | Path) -> None:

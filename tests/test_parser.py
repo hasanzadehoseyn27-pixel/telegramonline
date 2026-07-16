@@ -195,7 +195,9 @@ class ParserTests(unittest.TestCase):
         ads = parse_message_group("999", text, source="live")
         self.assertEqual(len(ads), 3)
         self.assertEqual(ads[0].vehicle_key, "changan_cs55")
-        self.assertEqual(ads[1].vehicle_key, "peugeot_207")
+        # پژو 207 عمداً بر اساس اسم استخراج‌شده تفکیک می‌شود (نه یک کلید ثابت
+        # برای همه‌ی تریم‌ها)، تا در «کمترین قیمت» با هم قاطی نشوند.
+        self.assertTrue(ads[1].vehicle_key.startswith("peugeot_207"))
         self.assertEqual(ads[2].vehicle_key, "dena")
         # هر سه باید همان source_message_id واقعی را داشته باشند (یک پیام واحدند)
         self.assertTrue(all(ad.source_message_id == "999" for ad in ads))
