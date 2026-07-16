@@ -19,10 +19,14 @@ from .storage import (
     add_channel,
     check_price_alerts,
     connect,
+    deactivate_channel,
+    deactivate_source_group,
     delete_ads_by_channel_username,
     delete_ads_for_channel,
     get_channel_by_username,
+    increment_channel_join_attempts,
     increment_source_group_discovered,
+    increment_source_group_join_attempts,
     list_active_joined_channels,
     list_active_joined_source_groups,
     list_channels,
@@ -147,19 +151,38 @@ async def add_and_activate_channel(client: TelegramClient, conn, username: str, 
     return {"status": "ok", "channel_id": channel_id, "joined": joined, "inserted_today": inserted}
 
 
+MAX_JOIN_ATTEMPTS = 5
+
+
 async def sync_channels(client: TelegramClient, conn) -> set[str]:
     """کانال‌های ثبت‌شده‌ی هنوز-عضونشده را عضو و بک‌فیل امروز می‌کند.
 
     وضعیت «عضو شده یا نه» مستقیم از ستون channels.joined خوانده می‌شود (نه یک
     مجموعه‌ی موقت در حافظه)، تا هر رابط دیگری (بات، بعداً سایت) هم که یک ردیف
     کانال جدید در دیتابیس بگذارد، همین حلقه در دور بعدی آن را پیدا و فعال کند.
+
+    اگر یک یوزرنیم بعد از چند تلاش پشت‌سرهم (مثلاً یوزرنیم اشتباه/کانال حذف
+    شده) هنوز join نشود، به‌جای تلاش بی‌نهایت هر ۳۰ ثانیه، غیرفعالش می‌کنیم
+    تا لاگ‌ها شلوغ نشوند؛ صاحب سایت می‌تواند بعداً با یوزرنیم درست دوباره
+    اضافه‌اش کند.
     """
     for channel in list_unjoined_channels(conn):
         username = channel["username"]
         print(f"🆕 کانال جدید شناسایی شد: {username} — در حال عضویت و بک‌فیل امروز...", flush=True)
         joined = await join_channel(client, username)
         if not joined:
-            print(f"❌ کانال {username} عضو نشد؛ در دور بعد دوباره تلاش می‌شود.", flush=True)
+            attempts = increment_channel_join_attempts(conn, channel["id"])
+            if attempts >= MAX_JOIN_ATTEMPTS:
+                deactivate_channel(conn, channel["id"])
+                print(
+                    f"🛑 کانال {username} بعد از {attempts} تلاش عضو نشد (احتمالاً یوزرنیم اشتباه/کانال حذف‌شده)؛ غیرفعال شد. برای تلاش دوباره، یوزرنیم درست را از سایت اضافه کن.",
+                    flush=True,
+                )
+            else:
+                print(
+                    f"❌ کانال {username} عضو نشد؛ تلاش {attempts}/{MAX_JOIN_ATTEMPTS}، در دور بعد دوباره تلاش می‌شود.",
+                    flush=True,
+                )
             continue
         title = channel["title"]
         try:
@@ -191,7 +214,15 @@ async def sync_source_groups(client: TelegramClient, conn) -> set[str]:
         print(f"source group discovered: {username}; joining...", flush=True)
         joined = await join_channel(client, username)
         if not joined:
-            print(f"source group join failed: {username}", flush=True)
+            attempts = increment_source_group_join_attempts(conn, group["id"])
+            if attempts >= MAX_JOIN_ATTEMPTS:
+                deactivate_source_group(conn, group["id"])
+                print(
+                    f"🛑 source group {username} failed to join {attempts} times; deactivated (bad/removed username?).",
+                    flush=True,
+                )
+            else:
+                print(f"source group join failed: {username} (attempt {attempts}/{MAX_JOIN_ATTEMPTS})", flush=True)
             continue
         title = group["title"]
         try:

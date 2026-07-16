@@ -54,6 +54,8 @@ VEHICLE_PATTERNS: list[tuple[str, str, str]] = [
     ("benz_a200l", "بنز A200L", r"بنز\s*(?:a\s*200\s*l|a200l)|(?:a\s*200\s*l|a200l)\s*بنز"),
     ("benz_c200", "بنز C200", r"بنز\s*(?:c\s*200|c200)|(?:c\s*200|c200)\s*بنز"),
     ("benz_a180", "بنز A180", r"بنز\s*(?:a\s*180|a180)|(?:a\s*180|a180)\s*بنز"),
+    ("toyota_prius", "تویوتا پریوس", r"پریوس|\bprius\b"),
+    ("t9_unspecified", "تیتان T9", r"(?<![a-zA-Z0-9])t\s*9(?![a-zA-Z0-9])"),
 ]
 
 DETAILED_VEHICLE_PATTERNS: list[tuple[str, str, str]] = [
