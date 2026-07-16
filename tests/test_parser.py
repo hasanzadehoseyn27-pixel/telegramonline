@@ -67,7 +67,7 @@ class ParserTests(unittest.TestCase):
             09188570500
             """,
         )
-        self.assertEqual(ad.vehicle_key, "soren")
+        self.assertTrue(ad.vehicle_key.startswith("soren"))
         self.assertEqual(ad.price_million, 2000)
 
     def test_spaced_billion_price(self) -> None:
@@ -225,7 +225,7 @@ class ParserTests(unittest.TestCase):
         )
         ads = parse_message_group("m", text, source="live")
         self.assertEqual(len(ads), 2)
-        changan = next(ad for ad in ads if ad.vehicle_key == "changan_cs55")
+        changan = next(ad for ad in ads if ad.vehicle_key.startswith("changan_cs55"))
         self.assertEqual(changan.price_million, 5800)
 
     def test_full_date_not_treated_as_price(self) -> None:

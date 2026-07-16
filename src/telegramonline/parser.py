@@ -80,6 +80,7 @@ DETAILED_VEHICLE_PATTERNS: list[tuple[str, str, str]] = [
     ("saina_s", "ساینا S", r"ساینا\s*(?:s|اس)\b"),
     ("quick_gxr_rim", "کوییک GXR با رینگ", r"کوییک\s*(?:gxr|جی\s*ایکس\s*آر).*(?<!بدون\s)رینگ"),
     ("quick_gxr_cap", "کوییک GXR بدون رینگ", r"کوییک\s*(?:gxr|جی\s*ایکس\s*آر).*(?:قالپاق|بدون\s*رینگ)"),
+    ("quick_gxr", "کوییک GXR", r"کوییک\s*(?:gxr|جی\s*ایکس\s*آر)"),
     ("quick_gxrl", "کوییک GXRL", r"کوییک\s*(?:gxrl|جی\s*ایکس\s*آر\s*ال)\b"),
     ("quick_gx", "کوییک GX", r"کوییک\s*(?:gx|جی\s*ایکس)\b"),
     ("quick_rs", "کوییک RS", r"کوییک\s*(?:rs|آر\s*اس)\b"),
@@ -112,12 +113,13 @@ DETAILED_VEHICLE_PATTERNS: list[tuple[str, str, str]] = [
     ("haima_s8", "هایما S8", r"هایما\s*[\(\s]*(?:s\s*8|s8|اس\s*8)"),
     ("haima_7x", "هایما 7X", r"هایما\s*[\(\s]*(?:7\s*x|7x)"),
     ("eagle", "ایگل", r"\bایگل\b"),
-    ("jack_j4", "جک J4", r"جک\s*[\(\s]*(?:j\s*4|j4)"),
-    ("jack_j7", "جک J7", r"جک\s*[\(\s]*(?:j\s*7|j7)"),
+    ("jack_j4", "جک J4", r"جک\s*[\(\s]*(?:j\s*4|j4|جی\s*4|جی\s*چهار)"),
+    ("jack_j7", "جک J7", r"جک\s*[\(\s]*(?:j\s*7|j7|g\s*7|g7|جی\s*هفت)"),
     ("jack_x5", "جک X5", r"جک\s*[\(\s]*(?:x\s*5|x5)"),
     ("jack_t9", "جک T9", r"جک\s*[\(\s]*(?:t\s*9|t9)|kmc\s*t\s*9"),
     ("bac", "بک", r"\bبک\b|\bbac\b"),
     ("jack_sr3", "جک SR3", r"جک\s*[\(\s]*(?:sr\s*3|sr3)"),
+    ("jack_s3", "جک S3", r"جک\s*[\(\s]*(?:s\s*3|s3|اس\s*3)\b"),
     ("jack_sr6", "جک SR6", r"جک\s*[\(\s]*(?:sr\s*6|sr6)"),
     ("fidelity_elite_5", "فیدلیتی الیت ۵ نفره", r"(?:فید|فیدلیتی).*(?:الیت).*(?<![0-9۰-۹])(?:5|۵)(?![0-9۰-۹])"),
     ("fidelity_elite_7", "فیدلیتی الیت ۷ نفره", r"(?:فید|فیدلیتی).*(?:الیت).*(?<![0-9۰-۹])(?:7|۷)(?![0-9۰-۹])"),
@@ -320,7 +322,7 @@ def _is_separator_line(line: str) -> bool:
 
 
 PRICE_MARKER_CHARS = "🔴🟡🟢🔵🟠🟣⚫⚪🟤💰💵💸💲"
-FULL_DATE_RE = re.compile(r"\b14\d{2}/\d{1,2}/\d{1,2}\b")
+FULL_DATE_RE = re.compile(r"\b14\d{2}/\d{1,2}(?:/\d{1,2})?\b")
 
 
 def _is_price_only_paragraph(paragraph: str) -> bool:
