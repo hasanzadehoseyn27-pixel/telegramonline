@@ -222,8 +222,14 @@ class CheapestLiveVehicleOut(BaseModel):
     source_message_id: str | None
 
     message_date: str | None
-
     telegram_link: str | None
+
+
+class CheapestLivePage(BaseModel):
+    items: list[CheapestLiveVehicleOut]
+    total: int
+    limit: int
+    offset: int
 
 class ChannelLiveOut(BaseModel):
     id: int

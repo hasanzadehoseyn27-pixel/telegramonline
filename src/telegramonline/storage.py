@@ -2164,9 +2164,28 @@ def get_dashboard_summary(
         ],
     }
 
+def count_live_cheapest_vehicles(conn: sqlite3.Connection) -> int:
+    """تعداد کل مدل‌های شناخته‌شده‌ای که امروز حداقل یک آگهی قیمت‌دار دارند."""
+    today = today_day_key()
+    row = conn.execute(
+        """
+        SELECT COUNT(DISTINCT vehicle_key) AS c
+        FROM ads
+        WHERE
+            day_key = ?
+            AND status = 'sale'
+            AND price_million IS NOT NULL
+            AND vehicle_key IS NOT NULL
+        """,
+        (today,),
+    ).fetchone()
+    return int(row["c"] or 0)
+
+
 def get_live_cheapest_vehicles(
     conn: sqlite3.Connection,
     limit: int = 50,
+    offset: int = 0,
 ) -> list[sqlite3.Row]:
     """
     کمترین قیمت لحظه‌ای هر مدل خودرو برای صفحه کارت‌های سایت.
@@ -2229,10 +2248,11 @@ def get_live_cheapest_vehicles(
         ORDER BY
             price_million ASC
 
-        LIMIT ?
+        LIMIT ? OFFSET ?
         """,
         (
             today,
             limit,
+            offset,
         ),
     ).fetchall()

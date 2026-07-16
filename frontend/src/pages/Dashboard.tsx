@@ -21,9 +21,9 @@ const tabButtons: { tab: AdsTab; title: string; icon: typeof Car }[] = [
 export default function Dashboard() {
   const [channelUsername, setChannelUsername] = useState("");
   const { data } = useDashboard();
-  const { data: cheapest = [] } = useQuery({
-    queryKey: ["vehicles", "cheapest-live"],
-    queryFn: () => getLiveCheapestVehicles(200),
+  const { data: cheapest } = useQuery({
+    queryKey: ["vehicles", "cheapest-live", "count"],
+    queryFn: () => getLiveCheapestVehicles(1, 0),
     refetchInterval: 5000,
   });
   const { data: channels } = useQuery({
@@ -47,9 +47,9 @@ export default function Dashboard() {
       { title: "پیام امروز", value: data?.today.total_ads ?? 0, icon: Radio },
       { title: "قیمت‌دار", value: data?.today.priced ?? 0, icon: Car },
       { title: "بدون قیمت", value: data?.today.unpriced ?? 0, icon: Bell },
-      { title: "کمترین‌ها", value: cheapest.length, icon: TrendingDown },
+      { title: "کمترین‌ها", value: cheapest?.total ?? 0, icon: TrendingDown },
     ],
-    [cheapest.length, data],
+    [cheapest?.total, data],
   );
 
   return (

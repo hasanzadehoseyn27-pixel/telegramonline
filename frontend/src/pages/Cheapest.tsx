@@ -1,25 +1,40 @@
 import { motion } from "framer-motion";
-import { ExternalLink, Flame, Phone, Search } from "lucide-react";
+import { ChevronLeft, ChevronRight, ExternalLink, Flame, Phone, Search } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { getLiveCheapestVehicles } from "../api/vehicles.api";
 import { formatCount, formatDateTime, formatNumber, telegramLink } from "../utils/format";
 
+const PAGE_SIZE = 24;
+// وقتی جستجو فعاله، به‌جای فقط همون صفحه، یه بچ بزرگ‌تر می‌گیریم تا جستجو
+// روی همه‌ی مدل‌های امروز کار کنه، نه فقط صفحه‌ی جاری.
+const SEARCH_BATCH_SIZE = 200;
+
 export default function Cheapest() {
   const [search, setSearch] = useState("");
-  const { data = [], isLoading } = useQuery({
-    queryKey: ["vehicles", "cheapest-live"],
-    queryFn: () => getLiveCheapestVehicles(200),
+  const [page, setPage] = useState(0);
+  const isSearching = search.trim().length > 0;
+
+  const { data, isLoading } = useQuery({
+    queryKey: ["vehicles", "cheapest-live", isSearching ? "search" : page],
+    queryFn: () =>
+      isSearching
+        ? getLiveCheapestVehicles(SEARCH_BATCH_SIZE, 0)
+        : getLiveCheapestVehicles(PAGE_SIZE, page * PAGE_SIZE),
     refetchInterval: 5000,
   });
+
+  const items = data?.items ?? [];
+  const total = data?.total ?? 0;
+  const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   const filtered = useMemo(() => {
     const normalized = search.trim().toLowerCase();
     if (!normalized) {
-      return data;
+      return items;
     }
 
-    return data.filter((item) => {
+    return items.filter((item) => {
       return [
         item.vehicle_name,
         item.vehicle_key,
@@ -32,10 +47,10 @@ export default function Cheapest() {
         .toLowerCase()
         .includes(normalized);
     });
-  }, [data, search]);
+  }, [items, search]);
 
   return (
-    <div className="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)] gap-4">
+    <div className="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)_auto] gap-4">
       <div className="glass-panel rounded-2xl p-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
@@ -52,13 +67,18 @@ export default function Cheapest() {
               <Search size={17} className="shrink-0 text-slate-500" />
               <input
                 value={search}
-                onChange={(event) => setSearch(event.target.value)}
+                onChange={(event) => {
+                  setSearch(event.target.value);
+                  setPage(0);
+                }}
                 className="min-w-0 flex-1 bg-transparent text-sm outline-none"
                 placeholder="جستجوی مدل، رنگ، کانال..."
               />
             </div>
             <div className="rounded-full bg-cyan-300 px-4 py-2 text-sm font-black text-slate-950">
-              {formatCount(filtered.length)} مدل
+              {isSearching
+                ? `${formatCount(filtered.length)} نتیجه`
+                : `${formatCount(items.length)} از ${formatCount(total)} مدل`}
             </div>
           </div>
         </div>
@@ -67,6 +87,8 @@ export default function Cheapest() {
       <div className="min-h-0 overflow-y-auto rounded-xl scroll-area">
         {isLoading ? (
           <div className="grid h-full place-items-center text-slate-400">در حال دریافت کمترین قیمت‌ها...</div>
+        ) : filtered.length === 0 ? (
+          <div className="grid h-full place-items-center text-slate-400">موردی پیدا نشد</div>
         ) : (
           <div className="grid gap-4 pb-2 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
             {filtered.map((item, index) => {
@@ -130,6 +152,32 @@ export default function Cheapest() {
           </div>
         )}
       </div>
+
+      {!isSearching && total > PAGE_SIZE && (
+        <div className="glass-panel flex items-center justify-between gap-3 rounded-2xl p-3">
+          <button
+            type="button"
+            onClick={() => setPage((p) => Math.max(0, p - 1))}
+            disabled={page === 0}
+            className="flex items-center gap-1 rounded-xl bg-white/10 px-3 py-2 text-sm font-bold transition hover:bg-white hover:text-slate-950 disabled:opacity-40 disabled:hover:bg-white/10 disabled:hover:text-inherit"
+          >
+            <ChevronRight size={16} />
+            قبلی
+          </button>
+          <div className="text-sm text-slate-400">
+            صفحه {formatCount(page + 1)} از {formatCount(pageCount)}
+          </div>
+          <button
+            type="button"
+            onClick={() => setPage((p) => Math.min(pageCount - 1, p + 1))}
+            disabled={page >= pageCount - 1}
+            className="flex items-center gap-1 rounded-xl bg-white/10 px-3 py-2 text-sm font-bold transition hover:bg-white hover:text-slate-950 disabled:opacity-40 disabled:hover:bg-white/10 disabled:hover:text-inherit"
+          >
+            بعدی
+            <ChevronLeft size={16} />
+          </button>
+        </div>
+      )}
     </div>
   );
 }

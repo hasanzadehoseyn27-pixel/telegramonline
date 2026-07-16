@@ -16,9 +16,16 @@ export interface CheapestVehicle {
   telegram_link: string | null;
 }
 
-export async function getLiveCheapestVehicles(limit = 100): Promise<CheapestVehicle[]> {
-  const response = await client.get<CheapestVehicle[]>("/vehicles/cheapest/live", {
-    params: { limit },
+export interface CheapestLivePage {
+  items: CheapestVehicle[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export async function getLiveCheapestVehicles(limit = 100, offset = 0): Promise<CheapestLivePage> {
+  const response = await client.get<CheapestLivePage>("/vehicles/cheapest/live", {
+    params: { limit, offset },
   });
   return response.data;
 }

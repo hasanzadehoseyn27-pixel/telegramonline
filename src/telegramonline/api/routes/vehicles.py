@@ -5,8 +5,8 @@ from sqlite3 import Connection
 from fastapi import APIRouter, Depends, Query
 
 from telegramonline.api.deps import get_db
-from telegramonline.api.schemas import CheapestLiveVehicleOut
-from telegramonline.storage import get_live_cheapest_vehicles
+from telegramonline.api.schemas import CheapestLivePage, CheapestLiveVehicleOut
+from telegramonline.storage import count_live_cheapest_vehicles, get_live_cheapest_vehicles
 
 
 router = APIRouter(
@@ -58,7 +58,7 @@ def row_to_vehicle_card(
 
 @router.get(
     "/cheapest/live",
-    response_model=list[CheapestLiveVehicleOut],
+    response_model=CheapestLivePage,
 )
 def cheapest_live(
     limit: int = Query(
@@ -66,16 +66,24 @@ def cheapest_live(
         ge=1,
         le=200,
     ),
+    offset: int = Query(
+        default=0,
+        ge=0,
+    ),
     db: Connection = Depends(get_db),
 ):
 
     rows = get_live_cheapest_vehicles(
         db,
         limit=limit,
+        offset=offset,
     )
 
+    total = count_live_cheapest_vehicles(db)
 
-    return [
-        row_to_vehicle_card(row)
-        for row in rows
-    ]
+    return CheapestLivePage(
+        items=[row_to_vehicle_card(row) for row in rows],
+        total=total,
+        limit=limit,
+        offset=offset,
+    )
