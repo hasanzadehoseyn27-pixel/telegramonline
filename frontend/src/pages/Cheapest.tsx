@@ -13,15 +13,17 @@ const SEARCH_BATCH_SIZE = 200;
 function VehicleAdsModal({
   vehicleKey,
   vehicleName,
+  day,
   onClose,
 }: {
   vehicleKey: string;
   vehicleName: string;
+  day: "today" | "yesterday";
   onClose: () => void;
 }) {
   const { data: ads = [], isLoading } = useQuery({
-    queryKey: ["vehicles", "for-model", vehicleKey],
-    queryFn: () => getAdsForModel(vehicleKey),
+    queryKey: ["vehicles", "for-model", vehicleKey, day],
+    queryFn: () => getAdsForModel(vehicleKey, day),
   });
 
   return (
@@ -106,15 +108,16 @@ function VehicleAdsModal({
 export default function Cheapest() {
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(0);
+  const [day, setDay] = useState<"today" | "yesterday">("today");
   const [selected, setSelected] = useState<{ key: string; name: string }>();
   const isSearching = search.trim().length > 0;
 
   const { data, isLoading } = useQuery({
-    queryKey: ["vehicles", "cheapest-live", isSearching ? "search" : page],
+    queryKey: ["vehicles", "cheapest-live", day, isSearching ? "search" : page],
     queryFn: () =>
       isSearching
-        ? getLiveCheapestVehicles(SEARCH_BATCH_SIZE, 0)
-        : getLiveCheapestVehicles(PAGE_SIZE, page * PAGE_SIZE),
+        ? getLiveCheapestVehicles(SEARCH_BATCH_SIZE, 0, day)
+        : getLiveCheapestVehicles(PAGE_SIZE, page * PAGE_SIZE, day),
     refetchInterval: 5000,
   });
 
@@ -173,6 +176,26 @@ export default function Cheapest() {
               {isSearching
                 ? `${formatCount(filtered.length)} نتیجه`
                 : `${formatCount(items.length)} از ${formatCount(total)} مدل`}
+            </div>
+            <div className="flex h-11 shrink-0 overflow-hidden rounded-xl bg-white/10 text-sm font-black">
+              <button
+                onClick={() => {
+                  setDay("today");
+                  setPage(0);
+                }}
+                className={["h-full px-4 transition", day === "today" ? "bg-white text-slate-950" : "hover:bg-white/20"].join(" ")}
+              >
+                امروز
+              </button>
+              <button
+                onClick={() => {
+                  setDay("yesterday");
+                  setPage(0);
+                }}
+                className={["h-full px-4 transition", day === "yesterday" ? "bg-white text-slate-950" : "hover:bg-white/20"].join(" ")}
+              >
+                دیروز
+              </button>
             </div>
           </div>
         </div>
@@ -279,7 +302,7 @@ export default function Cheapest() {
       )}
 
       {selected && (
-        <VehicleAdsModal vehicleKey={selected.key} vehicleName={selected.name} onClose={() => setSelected(undefined)} />
+        <VehicleAdsModal vehicleKey={selected.key} vehicleName={selected.name} day={day} onClose={() => setSelected(undefined)} />
       )}
     </div>
   );

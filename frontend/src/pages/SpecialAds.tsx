@@ -1,25 +1,22 @@
-import { ExternalLink, Plus, Sparkles, Trash2 } from "lucide-react";
+import { ExternalLink, Plus, Search, Sparkles, Trash2 } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
   addWatchedVehicle,
   getSpecialAds,
   getWatchedVehicles,
   removeWatchedVehicle,
 } from "../api/watchedVehicles.api";
-import { getFilterOptions } from "../api/filters.api";
+import { CURATED_VEHICLES } from "../data/curatedVehicles";
 import AdDetailModal from "../components/modal/AdDetailModal";
 import { formatCount, formatDateTime, formatNumber } from "../utils/format";
 
 export default function SpecialAds() {
-  const [vehicleKey, setVehicleKey] = useState("");
+  const [query, setQuery] = useState("");
+  const [showList, setShowList] = useState(false);
+  const [day, setDay] = useState<"today" | "yesterday">("today");
   const [selectedAdId, setSelectedAdId] = useState<number>();
   const queryClient = useQueryClient();
-
-  const { data: filterOptions } = useQuery({
-    queryKey: ["filters", "options"],
-    queryFn: getFilterOptions,
-  });
 
   const { data: watched = [] } = useQuery({
     queryKey: ["watched-vehicles"],
@@ -28,15 +25,16 @@ export default function SpecialAds() {
   });
 
   const { data: adsPage, isLoading } = useQuery({
-    queryKey: ["watched-vehicles", "ads"],
-    queryFn: () => getSpecialAds(50, 0),
+    queryKey: ["watched-vehicles", "ads", day],
+    queryFn: () => getSpecialAds(50, 0, day),
     refetchInterval: 5000,
   });
 
   const addMutation = useMutation({
     mutationFn: addWatchedVehicle,
     onSuccess: () => {
-      setVehicleKey("");
+      setQuery("");
+      setShowList(false);
       queryClient.invalidateQueries({ queryKey: ["watched-vehicles"] });
     },
   });
@@ -46,49 +44,77 @@ export default function SpecialAds() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["watched-vehicles"] }),
   });
 
-  function submit() {
-    if (!vehicleKey) return;
-    const vehicle = filterOptions?.vehicles.find((v) => v.key === vehicleKey);
-    addMutation.mutate({ vehicle_key: vehicleKey, vehicle_name: vehicle?.name });
+  const watchedKeys = useMemo(() => new Set(watched.map((w) => w.vehicle_key)), [watched]);
+
+  const suggestions = useMemo(() => {
+    const normalized = query.trim().toLowerCase();
+    const pool = CURATED_VEHICLES.filter((v) => !watchedKeys.has(v.key));
+    if (!normalized) return pool.slice(0, 30);
+    return pool.filter((v) => v.name.toLowerCase().includes(normalized)).slice(0, 30);
+  }, [query, watchedKeys]);
+
+  function pick(key: string, name: string) {
+    addMutation.mutate({ vehicle_key: key, vehicle_name: name });
   }
 
   const ads = adsPage?.items ?? [];
 
   return (
     <>
-      <div className="grid h-full min-h-0 grid-cols-[340px_minmax(0,1fr)] gap-4 max-xl:grid-cols-1">
+      <div className="grid h-full min-h-0 grid-cols-[360px_minmax(0,1fr)] gap-4 max-xl:grid-cols-1">
         <section className="glass-panel min-h-0 overflow-y-auto rounded-xl p-4 scroll-area">
           <div className="mb-4 flex items-center gap-2 text-xl font-black">
             <Sparkles className="text-cyan-200" />
             آگهی‌های خاص
           </div>
           <p className="mb-4 text-xs leading-6 text-slate-400 theme-muted">
-            فقط مدل‌هایی که اینجا اضافه می‌کنی (و مشتقات همون مدل) توی لیست کنار نشون داده می‌شن؛ بقیه‌ی آگهی‌ها
-            مخفی می‌مونن.
+            فقط از بین مدل‌هایی که پارسر برایشان تضمین‌شده انتخاب کن (سرچ کن، از لیست بزن) — این‌طوری «نامشخص» توی
+            این بخش هیچ‌وقت پیش نمی‌آد.
           </p>
 
-          <div className="space-y-2">
-            <select
-              value={vehicleKey}
-              onChange={(event) => setVehicleKey(event.target.value)}
-              className="h-11 w-full rounded-lg border border-white/10 bg-slate-950/70 px-3 text-sm outline-none"
-            >
-              <option value="">انتخاب مدل</option>
-              {(filterOptions?.vehicles ?? []).map((vehicle) => (
-                <option key={vehicle.key} value={vehicle.key}>
-                  {vehicle.name}
-                </option>
-              ))}
-            </select>
-            <button
-              onClick={submit}
-              disabled={!vehicleKey || addMutation.isPending}
-              className="flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-cyan-300 font-black text-slate-950 transition hover:bg-white disabled:opacity-50"
-            >
-              <Plus size={17} />
-              اضافه کردن به لیست خاص
-            </button>
+          <div className="relative">
+            <div className="flex h-11 items-center gap-2 rounded-lg border border-white/10 bg-slate-950/70 px-3">
+              <Search size={16} className="shrink-0 text-slate-500" />
+              <input
+                value={query}
+                onFocus={() => setShowList(true)}
+                onChange={(event) => {
+                  setQuery(event.target.value);
+                  setShowList(true);
+                }}
+                placeholder="جستجوی مدل (مثلاً: پانا ارتقا)"
+                className="min-w-0 flex-1 bg-transparent text-sm outline-none"
+              />
+            </div>
+
+            {showList && (
+              <div className="absolute right-0 left-0 top-[calc(100%+4px)] z-10 max-h-72 overflow-y-auto rounded-lg border border-white/10 bg-slate-950 shadow-2xl scroll-area">
+                {suggestions.length === 0 ? (
+                  <div className="p-3 text-center text-xs text-slate-400">موردی پیدا نشد</div>
+                ) : (
+                  suggestions.map((v) => (
+                    <button
+                      key={v.key}
+                      onClick={() => pick(v.key, v.name)}
+                      className="flex w-full items-center justify-between gap-2 px-3 py-2.5 text-right text-sm transition hover:bg-cyan-300/10"
+                    >
+                      <span className="truncate">{v.name}</span>
+                      <Plus size={14} className="shrink-0 text-cyan-200" />
+                    </button>
+                  ))
+                )}
+              </div>
+            )}
           </div>
+
+          {showList && (
+            <button
+              onClick={() => setShowList(false)}
+              className="mt-2 w-full rounded-lg bg-white/5 py-1.5 text-xs text-slate-400 hover:bg-white/10"
+            >
+              بستن لیست
+            </button>
+          )}
 
           <div className="mt-6 space-y-2">
             {watched.length === 0 && (
@@ -114,9 +140,25 @@ export default function SpecialAds() {
         </section>
 
         <section className="glass-panel flex min-h-0 flex-col overflow-hidden rounded-xl">
-          <div className="border-b border-white/10 p-4">
-            <div className="font-black">آگهی‌های مدل‌های خاص</div>
-            <div className="mt-1 text-xs text-slate-400">{formatCount(ads.length)} آگهی امروز</div>
+          <div className="flex items-center justify-between gap-3 border-b border-white/10 p-4">
+            <div>
+              <div className="font-black">آگهی‌های مدل‌های خاص</div>
+              <div className="mt-1 text-xs text-slate-400">{formatCount(ads.length)} آگهی</div>
+            </div>
+            <div className="flex h-9 shrink-0 overflow-hidden rounded-lg bg-white/10 text-xs font-black">
+              <button
+                onClick={() => setDay("today")}
+                className={["h-full px-3 transition", day === "today" ? "bg-white text-slate-950" : "hover:bg-white/10"].join(" ")}
+              >
+                امروز
+              </button>
+              <button
+                onClick={() => setDay("yesterday")}
+                className={["h-full px-3 transition", day === "yesterday" ? "bg-white text-slate-950" : "hover:bg-white/10"].join(" ")}
+              >
+                دیروز
+              </button>
+            </div>
           </div>
           <div className="min-h-0 flex-1 overflow-auto scroll-area">
             {isLoading ? (

@@ -25,16 +25,20 @@ export interface CheapestLivePage {
   offset: number;
 }
 
-export async function getLiveCheapestVehicles(limit = 100, offset = 0): Promise<CheapestLivePage> {
+export async function getLiveCheapestVehicles(
+  limit = 100,
+  offset = 0,
+  day: "today" | "yesterday" = "today",
+): Promise<CheapestLivePage> {
   const response = await client.get<CheapestLivePage>("/vehicles/cheapest/live", {
-    params: { limit, offset },
+    params: { limit, offset, day },
   });
   return response.data;
 }
 
-export async function getAdsForModel(vehicleKey: string): Promise<Ad[]> {
+export async function getAdsForModel(vehicleKey: string, day: "today" | "yesterday" = "today"): Promise<Ad[]> {
   const response = await client.get<Ad[]>("/vehicles/for-model", {
-    params: { vehicle_key: vehicleKey },
+    params: { vehicle_key: vehicleKey, day },
   });
   return response.data;
 }

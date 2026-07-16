@@ -97,6 +97,43 @@ button {
   }
 }
 
+@keyframes auroraFloat {
+  0%,
+  100% {
+    transform: translate(0, 0) scale(1);
+  }
+  33% {
+    transform: translate(2%, -4%) scale(1.08);
+  }
+  66% {
+    transform: translate(-3%, 3%) scale(0.96);
+  }
+}
+
+@keyframes shimmerSweep {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.aurora-blob {
+  animation: auroraFloat 14s ease-in-out infinite;
+  filter: blur(60px);
+  pointer-events: none;
+}
+
+.shimmer-text {
+  background: linear-gradient(90deg, #67e8f9, #ffffff, #f0abfc, #67e8f9);
+  background-size: 300% auto;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: shimmerSweep 6s linear infinite;
+}
+
 .glass-panel {
   border: 1px solid var(--panel-border);
   background: var(--panel-bg);

@@ -26,9 +26,13 @@ export async function removeWatchedVehicle(id: number): Promise<{ ok: boolean }>
   return response.data;
 }
 
-export async function getSpecialAds(limit = 50, offset = 0): Promise<AdsResponse> {
+export async function getSpecialAds(
+  limit = 50,
+  offset = 0,
+  day: "today" | "yesterday" = "today",
+): Promise<AdsResponse> {
   const response = await client.get<AdsResponse>("/watched-vehicles/ads", {
-    params: { limit, offset },
+    params: { limit, offset, day },
   });
   return response.data;
 }
