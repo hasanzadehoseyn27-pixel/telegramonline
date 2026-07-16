@@ -41,8 +41,8 @@ export default function SpecialAds() {
 
   return (
     <>
-      <div className="grid h-full min-h-0 grid-cols-[320px_minmax(0,1fr)] grid-rows-[minmax(0,1fr)] gap-4 max-xl:grid-cols-1 max-xl:grid-rows-[auto_minmax(0,1fr)]">
-        <section className="glass-panel flex min-h-0 flex-col overflow-hidden rounded-xl p-4">
+      <div className="flex h-full min-h-0 gap-4 max-xl:flex-col">
+        <section className="glass-panel flex h-full min-h-0 w-80 shrink-0 flex-col overflow-hidden rounded-xl p-4 max-xl:h-64 max-xl:w-full">
           <div className="mb-1 flex items-center gap-2 text-xl font-black">
             <Sparkles className="text-cyan-200" />
             آگهی‌های خاص
@@ -79,8 +79,8 @@ export default function SpecialAds() {
           </div>
         </section>
 
-        <div className="grid min-h-0 grid-rows-[minmax(0,1fr)_auto] gap-3">
-          <section className="glass-panel flex min-h-0 flex-col overflow-hidden rounded-xl">
+        <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col gap-3">
+          <section className="glass-panel flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl">
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 p-4">
               <div>
                 <div className="font-black">آگهی‌های مدل‌های خاص</div>
@@ -128,7 +128,7 @@ export default function SpecialAds() {
                 <div className="grid h-full place-items-center text-slate-400">هنوز آگهی‌ای برای این مدل‌ها پیدا نشده</div>
               ) : (
                 <table className="w-full min-w-[760px] text-sm">
-                  <thead className="sticky top-0 bg-slate-950/95 text-slate-400">
+                  <thead className="sticky top-0 bg-slate-950 text-slate-400">
                     <tr>
                       <th className="border-b border-white/10 px-4 py-3 text-right">خودرو</th>
                       <th className="border-b border-white/10 px-4 py-3 text-right">قیمت</th>
