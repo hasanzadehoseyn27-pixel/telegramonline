@@ -68,6 +68,13 @@ CREATE TABLE IF NOT EXISTS user_vehicles (
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS watched_vehicles (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    vehicle_key TEXT NOT NULL UNIQUE,
+    vehicle_name TEXT,
+    added_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE IF NOT EXISTS price_alerts (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
 
@@ -1663,6 +1670,95 @@ def count_buyer_ads_for_web(
     )
 
 
+# ---------------------------------------------------------------------------
+# آگهی‌های خاص (watchlist مدل‌های خاص کاربر)
+# ---------------------------------------------------------------------------
+
+def add_watched_vehicle(conn: sqlite3.Connection, vehicle_key: str, vehicle_name: str | None = None) -> int | None:
+    try:
+        cursor = conn.execute(
+            "INSERT INTO watched_vehicles (vehicle_key, vehicle_name) VALUES (?, ?)",
+            (vehicle_key, vehicle_name),
+        )
+        conn.commit()
+        return cursor.lastrowid
+    except sqlite3.IntegrityError:
+        row = conn.execute("SELECT id FROM watched_vehicles WHERE vehicle_key = ?", (vehicle_key,)).fetchone()
+        return row["id"] if row else None
+
+
+def list_watched_vehicles(conn: sqlite3.Connection) -> list[sqlite3.Row]:
+    return conn.execute("SELECT * FROM watched_vehicles ORDER BY added_at DESC").fetchall()
+
+
+def remove_watched_vehicle(conn: sqlite3.Connection, watched_id: int) -> bool:
+    cursor = conn.execute("DELETE FROM watched_vehicles WHERE id = ?", (watched_id,))
+    conn.commit()
+    return cursor.rowcount > 0
+
+
+def _watched_vehicles_where(conn: sqlite3.Connection) -> tuple[str, list[object]] | None:
+    """شرط WHERE برای «فقط آگهی‌های مدل‌های اضافه‌شده به لیست خاص، به‌همراه
+    مشتقاتشان». مشتق یعنی کلیدهایی که با همون کلید پایه شروع می‌شوند (مثلاً
+    وقتی «peugeot_207» اضافه شده، «peugeot_207::...» های پویا هم حساب می‌شوند).
+    اگر لیست خالی باشد None برمی‌گرداند.
+    """
+    watched = list_watched_vehicles(conn)
+    if not watched:
+        return None
+    parts = []
+    params: list[object] = []
+    for row in watched:
+        key = row["vehicle_key"]
+        parts.append("(vehicle_key = ? OR vehicle_key LIKE ?)")
+        params.append(key)
+        params.append(f"{key}::%")
+    return "(" + " OR ".join(parts) + ")", params
+
+
+def count_special_ads(conn: sqlite3.Connection, day_key: str | None = None) -> int:
+    watched_clause = _watched_vehicles_where(conn)
+    if watched_clause is None:
+        return 0
+    where, params = watched_clause
+    day_key = day_key or today_day_key()
+    row = conn.execute(
+        f"""
+        SELECT COUNT(DISTINCT dedup_key) AS c
+        FROM ads
+        WHERE day_key = ? AND status = 'sale' AND price_million IS NOT NULL AND {where}
+        """,
+        [day_key, *params],
+    ).fetchone()
+    return int(row["c"] or 0)
+
+
+def list_special_ads(
+    conn: sqlite3.Connection,
+    limit: int = 50,
+    offset: int = 0,
+    day_key: str | None = None,
+) -> list[sqlite3.Row]:
+    watched_clause = _watched_vehicles_where(conn)
+    if watched_clause is None:
+        return []
+    where, params = watched_clause
+    day_key = day_key or today_day_key()
+    return conn.execute(
+        f"""
+        WITH ranked AS (
+            SELECT *, ROW_NUMBER() OVER (PARTITION BY dedup_key ORDER BY id DESC) AS rn
+            FROM ads
+            WHERE day_key = ? AND status = 'sale' AND price_million IS NOT NULL AND {where}
+        )
+        SELECT * FROM ranked WHERE rn = 1
+        ORDER BY id DESC
+        LIMIT ? OFFSET ?
+        """,
+        [day_key, *params, limit, offset],
+    ).fetchall()
+
+
 def list_priced_ads_for_web(
     conn: sqlite3.Connection,
     query: str | None = None,
@@ -2423,6 +2519,28 @@ def count_live_cheapest_vehicles(conn: sqlite3.Connection) -> int:
         (today,),
     ).fetchone()
     return int(row["c"] or 0)
+
+
+def list_ads_for_vehicle_key(conn: sqlite3.Connection, vehicle_key: str) -> list[sqlite3.Row]:
+    """همه‌ی آگهی‌های امروزِ یک vehicle_key دقیق، از کمترین به بیشترین قیمت
+    (برای مودالِ «همه‌ی قیمت‌های پیداشده» وقتی روی یه کارت کمترین قیمت کلیک
+    می‌شه)."""
+    today = today_day_key()
+    return conn.execute(
+        """
+        WITH ranked AS (
+            SELECT *, ROW_NUMBER() OVER (PARTITION BY dedup_key ORDER BY id DESC) AS rn
+            FROM ads
+            WHERE day_key = ?
+              AND status = 'sale'
+              AND price_million IS NOT NULL
+              AND vehicle_key = ?
+        )
+        SELECT * FROM ranked WHERE rn = 1
+        ORDER BY price_million ASC
+        """,
+        (today, vehicle_key),
+    ).fetchall()
 
 
 def get_live_cheapest_vehicles(

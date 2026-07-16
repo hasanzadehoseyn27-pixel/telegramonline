@@ -1,4 +1,5 @@
 import client from "./client";
+import type { Ad } from "./ads.api";
 
 export interface CheapestVehicle {
   id: number;
@@ -27,6 +28,13 @@ export interface CheapestLivePage {
 export async function getLiveCheapestVehicles(limit = 100, offset = 0): Promise<CheapestLivePage> {
   const response = await client.get<CheapestLivePage>("/vehicles/cheapest/live", {
     params: { limit, offset },
+  });
+  return response.data;
+}
+
+export async function getAdsForModel(vehicleKey: string): Promise<Ad[]> {
+  const response = await client.get<Ad[]>("/vehicles/for-model", {
+    params: { vehicle_key: vehicleKey },
   });
   return response.data;
 }

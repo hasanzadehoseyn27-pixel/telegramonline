@@ -19,6 +19,7 @@ from telegramonline.api.routes import (
     source_groups,
     test,
     vehicles,
+    watched_vehicles,
     websocket,
 )
 from telegramonline.storage import ensure_schema
@@ -77,6 +78,7 @@ app.include_router(source_groups.router, prefix="/api")
 app.include_router(reports.router, prefix="/api")
 app.include_router(filters.router, prefix="/api")
 app.include_router(alerts.router, prefix="/api")
+app.include_router(watched_vehicles.router, prefix="/api")
 app.include_router(
     websocket.router
 )

@@ -8,12 +8,14 @@ import {
   Radio,
   Settings,
   ShieldCheck,
+  Sparkles,
 } from "lucide-react";
 import { NavLink } from "react-router-dom";
 
 const desktopMenu = [
   { title: "داشبورد", icon: LayoutDashboard, path: "/" },
   { title: "همه آگهی‌ها", icon: Car, path: "/ads" },
+  { title: "آگهی‌های خاص", icon: Sparkles, path: "/special-ads" },
   { title: "کمترین", icon: Flame, path: "/cheapest" },
   { title: "کانال‌ها", icon: Radio, path: "/channels" },
   { title: "هشدار", icon: Bell, path: "/alerts" },

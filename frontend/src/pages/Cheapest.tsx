@@ -1,8 +1,8 @@
-import { motion } from "framer-motion";
-import { ChevronLeft, ChevronRight, ExternalLink, Flame, Phone, Search } from "lucide-react";
+import { AnimatePresence, motion } from "framer-motion";
+import { ChevronLeft, ChevronRight, ExternalLink, Flame, Phone, Search, X } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { getLiveCheapestVehicles } from "../api/vehicles.api";
+import { getAdsForModel, getLiveCheapestVehicles } from "../api/vehicles.api";
 import { formatCount, formatDateTime, formatNumber, telegramLink } from "../utils/format";
 
 const PAGE_SIZE = 24;
@@ -10,9 +10,103 @@ const PAGE_SIZE = 24;
 // روی همه‌ی مدل‌های امروز کار کنه، نه فقط صفحه‌ی جاری.
 const SEARCH_BATCH_SIZE = 200;
 
+function VehicleAdsModal({
+  vehicleKey,
+  vehicleName,
+  onClose,
+}: {
+  vehicleKey: string;
+  vehicleName: string;
+  onClose: () => void;
+}) {
+  const { data: ads = [], isLoading } = useQuery({
+    queryKey: ["vehicles", "for-model", vehicleKey],
+    queryFn: () => getAdsForModel(vehicleKey),
+  });
+
+  return (
+    <AnimatePresence>
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        className="fixed inset-0 z-50 grid place-items-center bg-slate-950/78 p-4 backdrop-blur-md"
+        onClick={onClose}
+      >
+        <motion.div
+          initial={{ opacity: 0, y: 18, scale: 0.96 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          exit={{ opacity: 0, y: 18, scale: 0.96 }}
+          onClick={(event) => event.stopPropagation()}
+          className="glass-panel flex max-h-[86vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl"
+        >
+          <div className="flex items-center justify-between gap-3 border-b border-white/10 p-4">
+            <div>
+              <div className="font-black">{vehicleName}</div>
+              <div className="mt-1 text-xs text-slate-400">
+                همه‌ی آگهی‌های پیداشده، از کمترین تا بیشترین قیمت — روی هرکدوم بزن تا بره تلگرام
+              </div>
+            </div>
+            <button
+              onClick={onClose}
+              className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-white/10 hover:bg-white/20"
+            >
+              <X size={17} />
+            </button>
+          </div>
+
+          <div className="min-h-0 flex-1 overflow-y-auto scroll-area">
+            {isLoading ? (
+              <div className="grid h-40 place-items-center text-slate-400">در حال دریافت...</div>
+            ) : ads.length === 0 ? (
+              <div className="grid h-40 place-items-center text-slate-400">آگهی‌ای پیدا نشد</div>
+            ) : (
+              <div className="divide-y divide-white/10">
+                {ads.map((ad, index) => {
+                  const link = ad.telegram_link ?? telegramLink(ad.channel_username, ad.source_message_id);
+                  return (
+                    <a
+                      key={ad.id}
+                      href={link ?? undefined}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="flex items-center justify-between gap-3 px-4 py-3 transition hover:bg-white/5"
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-white/10 text-xs font-black text-slate-300">
+                          {index + 1}
+                        </span>
+                        <div className="min-w-0">
+                          <div className="truncate text-sm font-bold">
+                            {ad.color ?? "رنگ نامشخص"} · {ad.year ?? "مدل نامشخص"}
+                          </div>
+                          <div className="mt-0.5 truncate text-xs text-slate-400">
+                            {ad.channel_username ? `@${ad.channel_username}` : "-"} · {formatDateTime(ad.message_date)}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex shrink-0 items-center gap-2">
+                        <span className="text-base font-black text-cyan-100">
+                          {formatNumber(ad.price_million)} <span className="text-xs text-slate-400">میلیون</span>
+                        </span>
+                        <ExternalLink size={15} className="text-slate-500" />
+                      </div>
+                    </a>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </motion.div>
+      </motion.div>
+    </AnimatePresence>
+  );
+}
+
 export default function Cheapest() {
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(0);
+  const [selected, setSelected] = useState<{ key: string; name: string }>();
   const isSearching = search.trim().length > 0;
 
   const { data, isLoading } = useQuery({
@@ -59,7 +153,7 @@ export default function Cheapest() {
               کمترین قیمت زنده امروز
             </div>
             <div className="mt-1 text-sm text-slate-400 theme-muted">
-              هر کارت ارزان‌ترین آگهی پیدا شده برای همان مدل خودرو در روز جاری است.
+              روی هر کارت بزن تا لیست کامل قیمت‌های پیداشده‌ی همون مدل، از کمترین تا بیشترین، باز بشه.
             </div>
           </div>
           <div className="flex min-w-0 flex-wrap items-center gap-2 max-sm:w-full">
@@ -92,17 +186,17 @@ export default function Cheapest() {
         ) : (
           <div className="grid gap-4 pb-2 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
             {filtered.map((item, index) => {
-              const link = item.telegram_link ?? telegramLink(item.channel_username, item.source_message_id);
               return (
-                <motion.a
+                <motion.button
                   key={`${item.vehicle_key}-${item.id}`}
-                  href={link}
-                  target="_blank"
-                  rel="noreferrer"
+                  type="button"
+                  onClick={() =>
+                    setSelected({ key: item.vehicle_key ?? "", name: item.vehicle_name ?? "نامشخص" })
+                  }
                   initial={{ opacity: 0, y: 16 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: Math.min(index * 0.02, 0.28) }}
-                  className="glass-panel group rounded-2xl p-4 transition hover:-translate-y-1 hover:border-cyan-300/50"
+                  className="glass-panel group rounded-2xl p-4 text-right transition hover:-translate-y-1 hover:border-cyan-300/50"
                   style={{ animation: index < 3 ? "softBlink 2.4s ease-in-out infinite" : undefined }}
                 >
                   <div className="flex items-start justify-between gap-3">
@@ -151,7 +245,7 @@ export default function Cheapest() {
                       </span>
                     )}
                   </div>
-                </motion.a>
+                </motion.button>
               );
             })}
           </div>
@@ -182,6 +276,10 @@ export default function Cheapest() {
             <ChevronLeft size={16} />
           </button>
         </div>
+      )}
+
+      {selected && (
+        <VehicleAdsModal vehicleKey={selected.key} vehicleName={selected.name} onClose={() => setSelected(undefined)} />
       )}
     </div>
   );

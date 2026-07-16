@@ -2,6 +2,7 @@ import { Navigate, Route, Routes } from "react-router-dom";
 import DashboardLayout from "./components/layout/DashboardLayout";
 import Dashboard from "./pages/Dashboard";
 import Ads from "./pages/Ads";
+import SpecialAds from "./pages/SpecialAds";
 import Cheapest from "./pages/Cheapest";
 import Channels from "./pages/Channels";
 import Alerts from "./pages/Alerts";
@@ -35,6 +36,14 @@ function App() {
         element={
           <Protected>
             <Ads />
+          </Protected>
+        }
+      />
+      <Route
+        path="/special-ads"
+        element={
+          <Protected>
+            <SpecialAds />
           </Protected>
         }
       />
