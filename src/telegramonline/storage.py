@@ -145,8 +145,17 @@ def connect(db_path: str | Path) -> sqlite3.Connection:
     """
     path = Path(db_path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(path)
+    # timeout=10: اگه یه پروسه‌ی دیگه (مثلاً collector) هم‌زمان در حال
+    # نوشتن روی همین فایله، به‌جای خطای فوریِ «database is locked»، تا ۱۰
+    # ثانیه صبر می‌کنه و دوباره تلاش می‌کنه.
+    conn = sqlite3.connect(path, timeout=10)
     conn.row_factory = sqlite3.Row
+    # WAL: خواننده‌ها و نویسنده‌ها می‌تونن هم‌زمان روی فایل کار کنن، بدون
+    # اینکه هم رو قفل کنن؛ این دقیقاً همون حالتیه که اینجا لازم داریم چون
+    # چند تا پروسه (API، collector، اسکریپت‌های یک‌بارمصرف) هم‌زمان به یک
+    # فایل SQLite وصل می‌شن.
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA busy_timeout=10000")
     conn.executescript(TABLE_SCHEMA)
     _ensure_columns(conn)
     conn.executescript(INDEX_SCHEMA)
@@ -206,8 +215,9 @@ def connect_for_request(db_path: str | Path) -> sqlite3.Connection:
     """
     path = Path(db_path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(path, check_same_thread=False)
+    conn = sqlite3.connect(path, check_same_thread=False, timeout=10)
     conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA busy_timeout=10000")
     return conn
 
 
