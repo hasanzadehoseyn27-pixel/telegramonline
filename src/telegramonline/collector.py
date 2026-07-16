@@ -327,10 +327,16 @@ async def live_collect() -> None:
     proxy = parse_proxy_from_env()
     if proxy:
         print("Using Telegram proxy from TELEGRAM_PROXY.", flush=True)
-    client = TelegramClient("telegramonline_user", settings.api_id, settings.api_hash, proxy=proxy)
+    client = TelegramClient(
+        "telegramonline_user",
+        settings.api_id,
+        settings.api_hash,
+        proxy=proxy,
+        connection_retries=None,  # بی‌نهایت تلاش برای وصل‌شدن دوباره (پیش‌فرض فقط ۵ بار بود)
+        retry_delay=2,
+        auto_reconnect=True,
+    )
     await client.start()
-
-    # اگر collector مدتی خاموش بوده و از نیمه‌شب گذشته، همین الان هم یک‌بار پاک‌سازی کن.
     deleted_on_start = purge_old_ads(conn)
     if deleted_on_start:
         print(f"🧹 پاک‌سازی ابتدای اجرا: {deleted_on_start} ردیف قدیمی حذف شد.", flush=True)
@@ -418,6 +424,24 @@ async def live_collect() -> None:
     await client.run_until_disconnected()
 
 
+async def run_forever() -> None:
+    """live_collect را دور یک حلقه‌ی محافظ می‌گذارد؛ اگر به هر دلیلی (قطعی
+    پروکسی/شبکه، خطای غیرمنتظره) کل فرآیند از کار بیفتد، به‌جای اینکه ساکت
+    بمیرد و منتظر ری‌استارت دستی بماند، خودش بعد از چند ثانیه دوباره تلاش
+    می‌کند — بی‌نهایت.
+    """
+    backoff = 5
+    while True:
+        try:
+            await live_collect()
+            # اگر live_collect بدون خطا برگشت (یعنی run_until_disconnected
+            # تمام شد)، بازم یعنی اتصال قطع شده؛ دوباره تلاش کن.
+            print("⚠️ اتصال collector قطع شد؛ در حال تلاش دوباره...", flush=True)
+        except Exception as exc:  # noqa: BLE001
+            print(f"❌ collector با خطا متوقف شد: {exc}؛ {backoff} ثانیه دیگر دوباره تلاش می‌شود.", flush=True)
+        await asyncio.sleep(backoff)
+
+
 async def add_channel_cli(username: str) -> None:
     settings = Settings.from_env()
     conn = connect(settings.database_path)
@@ -457,7 +481,7 @@ def main() -> None:
     elif args.purge_now:
         purge_now_cli()
     else:
-        asyncio.run(live_collect())
+        asyncio.run(run_forever())
 
 
 if __name__ == "__main__":
