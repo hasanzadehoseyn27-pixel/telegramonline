@@ -246,7 +246,7 @@ def _clean_detected_vehicle_name(text: str, fallback: str) -> str:
         before_stop = VEHICLE_NAME_STOP_WORDS_RE.split(line, maxsplit=1)[0]
         cleaned = before_stop
         cleaned = re.sub(r"(?<!\d)(?:\+?98|0)?9\d{9}(?!\d)", " ", cleaned)
-        cleaned = re.sub(r"\b(?:14\d{2}|40[0-9]|20[12]\d|2[3-6])\b", " ", cleaned)
+        cleaned = re.sub(r"(?<![0-9۰-۹])(?:14\d{2}|40[0-9]|20[12]\d|2[3-6])(?![0-9۰-۹])", " ", cleaned)
         for color in COLORS:
             cleaned = re.sub(re.escape(color), " ", cleaned, flags=re.IGNORECASE)
         cleaned = re.sub(r"\b\d{4,6}\b", " ", cleaned)
