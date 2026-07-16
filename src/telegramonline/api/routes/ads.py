@@ -20,11 +20,17 @@ from telegramonline.storage import (
     list_priced_ads_for_web,
     list_unpriced_ads_for_web,
     list_used_ads_for_web,
+    today_day_key,
+    yesterday_day_key,
 )
 
 from telegramonline.storage import get_ad_by_id
 
 router = APIRouter(prefix="/ads", tags=["ads"])
+
+
+def _resolve_day_key(day: str) -> str:
+    return yesterday_day_key() if day == "yesterday" else today_day_key()
 
 
 def row_to_ad(row) -> AdOut:
@@ -69,10 +75,12 @@ def get_priced_ads(
         default="newest",
         pattern="^(newest|oldest|price_asc|price_desc|year_desc|year_asc|mileage_asc|mileage_desc)$",
     ),
+    day: str = Query(default="today", pattern="^(today|yesterday)$"),
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
     db: Connection = Depends(get_db),
 ) -> AdsPage:
+    day_key = _resolve_day_key(day)
     rows = list_priced_ads_for_web(
         db,
         query=query,
@@ -86,6 +94,7 @@ def get_priced_ads(
         sort=sort,
         limit=limit,
         offset=offset,
+        day_key=day_key,
     )
 
     items = [row_to_ad(row) for row in rows]
@@ -100,6 +109,7 @@ def get_priced_ads(
         max_price=max_price,
         min_mileage=min_mileage,
         max_mileage=max_mileage,
+        day_key=day_key,
     )
 
     return AdsPage(
@@ -120,10 +130,12 @@ def get_unpriced_ads(
         default="newest",
         pattern="^(newest|oldest|year_desc|year_asc)$",
     ),
+    day: str = Query(default="today", pattern="^(today|yesterday)$"),
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
     db: Connection = Depends(get_db),
 ) -> AdsPage:
+    day_key = _resolve_day_key(day)
 
     rows = list_unpriced_ads_for_web(
         db,
@@ -134,6 +146,7 @@ def get_unpriced_ads(
         sort=sort,
         limit=limit,
         offset=offset,
+        day_key=day_key,
     )
 
     items = [row_to_ad(row) for row in rows]
@@ -144,6 +157,7 @@ def get_unpriced_ads(
         vehicle_keys=vehicle_keys,
         years=years,
         colors=colors,
+        day_key=day_key,
     )
 
     return AdsPage(
@@ -168,10 +182,12 @@ def get_used_ads(
         default="newest",
         pattern="^(newest|oldest|price_asc|price_desc|mileage_asc|mileage_desc|year_desc|year_asc)$",
     ),
+    day: str = Query(default="today", pattern="^(today|yesterday)$"),
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
     db: Connection = Depends(get_db),
 ) -> AdsPage:
+    day_key = _resolve_day_key(day)
 
     rows = list_used_ads_for_web(
         db,
@@ -186,6 +202,7 @@ def get_used_ads(
         sort=sort,
         limit=limit,
         offset=offset,
+        day_key=day_key,
     )
 
     items = [row_to_ad(row) for row in rows]
@@ -200,6 +217,7 @@ def get_used_ads(
         max_price=max_price,
         min_mileage=min_mileage,
         max_mileage=max_mileage,
+        day_key=day_key,
     )
 
     return AdsPage(
@@ -221,10 +239,12 @@ def get_buyer_ads(
         default="newest",
         pattern="^(newest|oldest|year_desc|year_asc)$",
     ),
+    day: str = Query(default="today", pattern="^(today|yesterday)$"),
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
     db: Connection = Depends(get_db),
 ) -> AdsPage:
+    day_key = _resolve_day_key(day)
 
     rows = list_buyer_ads_for_web(
         db,
@@ -235,6 +255,7 @@ def get_buyer_ads(
         sort=sort,
         limit=limit,
         offset=offset,
+        day_key=day_key,
     )
 
     items = [row_to_ad(row) for row in rows]
@@ -245,6 +266,7 @@ def get_buyer_ads(
         vehicle_keys=vehicle_keys,
         years=years,
         colors=colors,
+        day_key=day_key,
     )
 
     return AdsPage(

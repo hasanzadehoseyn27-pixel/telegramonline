@@ -42,6 +42,7 @@ function toApiParams(params?: AdsParams) {
     min_mileage: params?.minMileage,
     max_mileage: params?.maxMileage,
     sort: params?.sort ?? "newest",
+    day: params?.day ?? "today",
     limit: params?.limit ?? 200,
     offset: params?.offset ?? 0,
   };

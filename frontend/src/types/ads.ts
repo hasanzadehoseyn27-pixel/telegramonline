@@ -20,6 +20,7 @@ export interface AdsParams {
   colors?: string[];
   years?: number[];
   timeRange?: number;
+  day?: "today" | "yesterday";
   sort?: SortMode;
   limit?: number;
   offset?: number;

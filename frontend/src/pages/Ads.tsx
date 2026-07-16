@@ -11,27 +11,46 @@ const tabButtons: { tab: AdsTab; title: string; icon: typeof Car }[] = [
 ];
 
 export default function Ads() {
-  const { activeTab, setTab } = useAdsStore();
+  const { activeTab, setTab, filters, setFilters } = useAdsStore();
+  const day = filters.day ?? "today";
 
   return (
     <div className="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)] gap-4">
-      <div className="flex min-w-0 flex-wrap gap-2">
-        {tabButtons.map((item) => {
-          const Icon = item.icon;
-          return (
-            <button
-              key={item.tab}
-              onClick={() => setTab(item.tab)}
-              className={[
-                "flex h-10 shrink-0 items-center gap-2 rounded-xl px-4 text-sm font-black transition",
-                activeTab === item.tab ? "bg-white text-slate-950" : "bg-white/10 hover:bg-white/20",
-              ].join(" ")}
-            >
-              <Icon size={17} />
-              {item.title}
-            </button>
-          );
-        })}
+      <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+        <div className="flex min-w-0 flex-wrap gap-2">
+          {tabButtons.map((item) => {
+            const Icon = item.icon;
+            return (
+              <button
+                key={item.tab}
+                onClick={() => setTab(item.tab)}
+                className={[
+                  "flex h-10 shrink-0 items-center gap-2 rounded-xl px-4 text-sm font-black transition",
+                  activeTab === item.tab ? "bg-white text-slate-950" : "bg-white/10 hover:bg-white/20",
+                ].join(" ")}
+              >
+                <Icon size={17} />
+                {item.title}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* موقتی: برای دیدن پیام‌های دیروز بعد از پاک‌سازی نیمه‌شب */}
+        <div className="flex h-10 shrink-0 overflow-hidden rounded-xl bg-white/10 text-sm font-black">
+          <button
+            onClick={() => setFilters({ day: "today" })}
+            className={["h-full px-4 transition", day === "today" ? "bg-white text-slate-950" : "hover:bg-white/10"].join(" ")}
+          >
+            امروز
+          </button>
+          <button
+            onClick={() => setFilters({ day: "yesterday" })}
+            className={["h-full px-4 transition", day === "yesterday" ? "bg-white text-slate-950" : "hover:bg-white/10"].join(" ")}
+          >
+            دیروز
+          </button>
+        </div>
       </div>
 
       <div className="grid min-h-0 grid-cols-[minmax(0,1fr)_300px] gap-4 max-xl:grid-cols-1">
