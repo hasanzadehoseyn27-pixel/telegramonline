@@ -63,6 +63,7 @@ DETAILED_VEHICLE_PATTERNS: list[tuple[str, str, str]] = [
     ("peugeot_207_pana_plus_manual_cap", "۲۰۷ پانا ارتقا پلاس دنده قالپاق", r"(?:207|۲۰۷)\s*(?:پانا|پاناروما|پانوراما).*(?:ارتقا|ارتقاء).*(?:پلاس).*(?:دنده).*(?:قالپاق|بدون\s*رینگ)"),
     ("peugeot_207_pana_upgrade_manual", "۲۰۷ دنده پانا ارتقا", r"(?=.*(?:207|۲۰۷))(?=.*(?:پانا|پاناروما|پانوراما))(?=.*(?:ارتقا|ارتقاء))(?=.*(?:دنده)).*"),
     ("peugeot_207_pana_upgrade_auto", "۲۰۷ اتومات پانا ارتقا", r"(?=.*(?:207|۲۰۷))(?=.*(?:پانا|پاناروما|پانوراما))(?=.*(?:ارتقا|ارتقاء))(?=.*(?:اتومات|اتو)).*"),
+    ("peugeot_207_pana_company_rim", "۲۰۷ پانورما رینگ شرکتی", r"(?=.*(?:207|۲۰۷))(?=.*(?:پانا|پاناروما|پانورما))(?=.*(?:رینگ))(?=.*(?:شرکتی)).*"),
     ("peugeot_207_metal_manual_hydraulic_disc", "۲۰۷ سقف فلز دنده فرمان هیدرولیک دیسک عقب", r"(?:207|۲۰۷).*(?:سقف\s*فلز).*(?:دنده).*(?:هیدرولیک).*(?:دیسک\s*عقب)"),
     ("peugeot_207_metal_manual_hydraulic", "۲۰۷ سقف فلز دنده فرمان هیدرولیک", r"(?:207|۲۰۷).*(?:سقف\s*فلز).*(?:دنده).*(?:هیدرولیک)"),
     ("peugeot_207_metal_manual_electric_full", "۲۰۷ سقف فلز دنده فرمان برقی فول", r"(?:207|۲۰۷).*(?:سقف\s*فلز).*(?:دنده).*(?:برقی).*(?:فول)?"),
@@ -394,7 +395,11 @@ def detect_vehicle(text: str, original_text: str | None = None) -> tuple[str | N
             return key, _clean_detected_vehicle_name(original_text or text, name)
     for key, name, pattern in VEHICLE_PATTERNS:
         if re.search(pattern, lowered, flags=re.IGNORECASE):
-            return key, name
+            # مثل الگوهای «تفصیلی»، اینجا هم به‌جای اسم ثابت و عمومی (مثلاً
+            # «پژو 207»)، سعی می‌کنیم اسم دقیق‌تری که فروشنده واقعاً نوشته
+            # (مثلاً «۲۰۷ دنده پانورما با رینگ شرکتی») رو از خود پیام دربیاریم.
+            # اگر چیز بهتری پیدا نشد، همون اسم ثابت fallback می‌مونه.
+            return key, _clean_detected_vehicle_name(original_text or text, name)
     return None, None
 
 
