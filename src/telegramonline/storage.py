@@ -411,7 +411,7 @@ def add_channel(conn: sqlite3.Connection, username: str, title: str | None = Non
     except sqlite3.IntegrityError:
         row = conn.execute("SELECT id FROM channels WHERE username = ?", (clean,)).fetchone()
         if row:
-            conn.execute("UPDATE channels SET active = 1 WHERE id = ?", (row["id"],))
+            conn.execute("UPDATE channels SET active = 1, join_attempts = 0 WHERE id = ?", (row["id"],))
             conn.commit()
             return row["id"]
         return None
@@ -431,7 +431,7 @@ def add_source_group(conn: sqlite3.Connection, username: str, title: str | None 
     except sqlite3.IntegrityError:
         row = conn.execute("SELECT id FROM source_groups WHERE username = ?", (clean,)).fetchone()
         if row:
-            conn.execute("UPDATE source_groups SET active = 1 WHERE id = ?", (row["id"],))
+            conn.execute("UPDATE source_groups SET active = 1, join_attempts = 0 WHERE id = ?", (row["id"],))
             conn.commit()
             return row["id"]
         return None

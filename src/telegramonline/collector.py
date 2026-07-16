@@ -5,7 +5,7 @@ import asyncio
 from datetime import datetime, timedelta, timezone
 
 from telethon import TelegramClient, events
-from telethon.errors import ChannelPrivateError, UserAlreadyParticipantError, UserNotParticipantError
+from telethon.errors import ChannelPrivateError, FloodWaitError, UserAlreadyParticipantError, UserNotParticipantError
 from telethon.tl.functions.channels import JoinChannelRequest, LeaveChannelRequest
 from telethon.tl.types import PeerChannel
 
@@ -46,13 +46,20 @@ CHANNEL_SYNC_INTERVAL_SECONDS = 30
 
 
 async def join_channel(client: TelegramClient, username: str) -> bool:
-    """اکانت شخصی را عضو کانال عمومی می‌کند (لازم برای دریافت پیام‌های زنده)."""
+    """اکانت شخصی را عضو کانال عمومی می‌کند (لازم برای دریافت پیام‌های زنده).
+
+    FloodWaitError عمداً اینجا گرفته نمی‌شود و به بالا پرتاب می‌شود؛ این خطا
+    یعنی خودِ تلگرام موقتاً محدودیت گذاشته (نه اینکه یوزرنیم غلط باشه)، پس
+    نباید مثل بقیه‌ی خطاها به‌عنوان «یک تلاش ناموفق» حساب بشه.
+    """
     try:
         entity = await client.get_entity(username)
         await client(JoinChannelRequest(entity))
         return True
     except UserAlreadyParticipantError:
         return True
+    except FloodWaitError:
+        raise
     except Exception as exc:  # noqa: BLE001
         print(f"⚠️ نتوانستم عضو کانال {username} شوم: {exc}", flush=True)
         return False
@@ -169,7 +176,19 @@ async def sync_channels(client: TelegramClient, conn) -> set[str]:
     for channel in list_unjoined_channels(conn):
         username = channel["username"]
         print(f"🆕 کانال جدید شناسایی شد: {username} — در حال عضویت و بک‌فیل امروز...", flush=True)
-        joined = await join_channel(client, username)
+        try:
+            joined = await join_channel(client, username)
+        except FloodWaitError as exc:
+            # این محدودیت خودِ تلگرامه، نه اینکه یوزرنیم غلط باشه — پس این
+            # تلاش را جزو ۵ تلاش ناموفق حساب نمی‌کنیم. چون این محدودیت روی
+            # کل اکانت اعمال می‌شه (نه فقط این کانال)، ادامه‌ی این دور رو هم
+            # متوقف می‌کنیم که بدتر نشه؛ دور بعدی (۳۰ ثانیه دیگر) دوباره
+            # امتحان می‌شود.
+            print(
+                f"⏳ محدودیت موقت تلگرام: باید {exc.seconds} ثانیه صبر کرد (کانال {username}). این تلاش شمرده نمی‌شود؛ فعلاً از عضوکردن کانال‌های جدید صرف‌نظر می‌شود تا دور بعد.",
+                flush=True,
+            )
+            break
         if not joined:
             attempts = increment_channel_join_attempts(conn, channel["id"])
             if attempts >= MAX_JOIN_ATTEMPTS:
@@ -212,7 +231,14 @@ async def sync_source_groups(client: TelegramClient, conn) -> set[str]:
     for group in list_unjoined_source_groups(conn):
         username = group["username"]
         print(f"source group discovered: {username}; joining...", flush=True)
-        joined = await join_channel(client, username)
+        try:
+            joined = await join_channel(client, username)
+        except FloodWaitError as exc:
+            print(
+                f"⏳ محدودیت موقت تلگرام: باید {exc.seconds} ثانیه صبر کرد (گروه {username}). این تلاش شمرده نمی‌شود.",
+                flush=True,
+            )
+            break
         if not joined:
             attempts = increment_source_group_join_attempts(conn, group["id"])
             if attempts >= MAX_JOIN_ATTEMPTS:
@@ -288,7 +314,14 @@ async def discover_forwarded_channel_from_group(
     else:
         channel_id = existing["id"]
 
-    joined = await join_channel(client, origin_username)
+    try:
+        joined = await join_channel(client, origin_username)
+    except FloodWaitError as exc:
+        print(
+            f"⏳ محدودیت موقت تلگرام هنگام join سریع {origin_username} ({exc.seconds} ثانیه). چون قبلاً ثبت شده، sync_channels دور بعد دوباره امتحان می‌کند.",
+            flush=True,
+        )
+        return
     if not joined:
         return
     mark_channel_joined(conn, channel_id, title=origin_title)
