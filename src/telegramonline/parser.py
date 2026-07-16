@@ -25,7 +25,7 @@ VEHICLE_PATTERNS: list[tuple[str, str, str]] = [
     ("sahand", "سهند", r"\bسهند\b"),
     ("tiba", "تیبا", r"\bتیبا\b"),
     ("rira", "ریرا", r"\bریرا\b"),
-    ("fidelity", "فیدلیتی", r"\bفیدلیتی\b|\bfidelity\b"),
+    ("fidelity", "فیدلیتی", r"\bفید(?:لیتی|یلتی|لتی)\b|\bfidelity\b"),
     ("dignity", "دیگنیتی", r"\bدیگنیتی\b|\bdignity\b"),
     ("respect", "رسپکت", r"\bرسپکت\b|\brespect\b"),
     ("lucano_l8", "لوکانو L8", r"\bلوکانو\s*l?\s*8\b|\blucano\s*l?\s*8\b"),
@@ -45,8 +45,15 @@ VEHICLE_PATTERNS: list[tuple[str, str, str]] = [
     ("lamari", "لاماری", r"\bلاماری\b"),
     ("mazda_ez6", "مزدا EZ6", r"\bمزدا\s*ez\s*6\b|\bez6\b"),
     ("tank_500", "تانک 500", r"\bتانک\s*500\b|\btank\s*500\b"),
+    ("tank_300", "تانک 300", r"\bتانک\s*300\b|\btank\s*300\b"),
     ("corolla", "کرولا", r"\bکرولا\b|\bcorolla\b"),
     ("beijing", "بیجینگ", r"\bبیجینگ\b|\bbeijing\b"),
+    ("frontlander", "فرانتلندر", r"فرا\s*ن?ت‌?\s*لندر|frontlander|freelander"),
+    ("byd_song_plus", "BYD سانگ پلاس", r"(?=.*(?:بی\s*وای\s*دی|byd))(?=.*(?:سانگ\s*پلاس|song\s*plus))"),
+    ("nissan_sylphy", "نیسان سیلفی", r"نیسان\s*سیلفی|سیلفی\s*(?:آماتیس|امتیس)?|sylphy"),
+    ("benz_a200l", "بنز A200L", r"بنز\s*(?:a\s*200\s*l|a200l)|(?:a\s*200\s*l|a200l)\s*بنز"),
+    ("benz_c200", "بنز C200", r"بنز\s*(?:c\s*200|c200)|(?:c\s*200|c200)\s*بنز"),
+    ("benz_a180", "بنز A180", r"بنز\s*(?:a\s*180|a180)|(?:a\s*180|a180)\s*بنز"),
 ]
 
 DETAILED_VEHICLE_PATTERNS: list[tuple[str, str, str]] = [
@@ -136,10 +143,8 @@ DETAILED_VEHICLE_PATTERNS: list[tuple[str, str, str]] = [
     ("optima_k5", "اپتیما K5", r"اپتیما\s*(?:k\s*5|k5)"),
     ("camry_2_china", "کمری ۲ لیتری چین", r"کمری.*(?:2|۲)\s*لیتری.*(?:چین)"),
     ("honda_hrv", "هوندا HR-V", r"هوندا\s*(?:hrv|hr\s*v)"),
-    ("frontlander", "فرانتلندر", r"فراتلندر|فرانتلندر|frontlander"),
     ("sonata", "سوناتا", r"\bسوناتا\b"),
     ("corolla_cross", "کرولا کراس", r"کرولا\s*کراس"),
-    ("byd_song_plus", "BYD سانگ پلاس", r"(?:بی\s*وای\s*دی|byd).*(?:سانگ\s*پلاس|song\s*plus)"),
     ("toyota_chr", "تویوتا CHR", r"تویوتا\s*(?:chr|c\s*h\s*r|سی\s*اچ\s*آر)"),
     ("levin_1800_hybrid", "لوین ۱۸۰۰ هیبرید", r"لوین\s*(?:1800|۱۸۰۰).*(?:هیبرید)"),
     ("troc", "تیراک", r"تیراک|t-?roc"),
@@ -148,7 +153,6 @@ DETAILED_VEHICLE_PATTERNS: list[tuple[str, str, str]] = [
     ("rav4_single_diff", "تویوتا راو۴ تک دیفرانسیل", r"(?:تویوتا\s*)?(?:رافور|راو\s*4|rav\s*4).*(?:تک\s*دف|تک\s*دیف|تک\s*دیفرانسیل)"),
     ("nissan_altima", "نیسان آلتیما", r"نیسان\s*التیما|altima"),
     ("qashqai", "نیسان قشقایی", r"قشقایی|qashqai"),
-    ("benz_a180", "بنز A180", r"بنز\s*(?:a\s*180|a180)"),
     ("camry_china_tita", "کمری چین تیتا", r"کمری.*(?:چین).*(?:تیتا)"),
     ("camry_japan_pano", "کمری ژاپن سقف پانا", r"کمری.*(?:ژاپن).*(?:پانا|پاناروما|سقف)"),
     ("elantra_zavina", "النترا زاوینا", r"النترا.*(?:زاوینا)"),
@@ -200,6 +204,13 @@ def known_vehicle_options() -> list[tuple[str, str]]:
     return options
 
 
+_SIGNATURE_LINE_RE = re.compile(r"@\w+|کانال\s*(?:ما|رسمی)|t\.me/|instagram\.com|همکاران\s*عزیز", re.IGNORECASE)
+# خطوطی که با این ایموجی‌های «برچسب فیلد» شروع می‌شوند (قیمت/تماس/مدل/رنگ/
+# کارکرد/مدارک) همیشه متادیتا هستند، نه عنوان خودرو — حتی اگر طولانی‌تر از
+# خط اسم واقعی باشند.
+_FIELD_MARKER_LINE_RE = re.compile(r"^[💰📞🏷📍🔧📄☎️✨🔴🟢⚪️⚫️🟡]")
+
+
 def _clean_detected_vehicle_name(text: str, fallback: str) -> str:
     """Return a compact model name from the actual message text.
 
@@ -211,6 +222,8 @@ def _clean_detected_vehicle_name(text: str, fallback: str) -> str:
     best = ""
     best_score = -1
     for line in candidates:
+        if _SIGNATURE_LINE_RE.search(line) or _FIELD_MARKER_LINE_RE.match(line):
+            continue
         if len(line) > 120:
             line = line[:120]
         before_stop = VEHICLE_NAME_STOP_WORDS_RE.split(line, maxsplit=1)[0]
@@ -364,11 +377,19 @@ def split_multi_ad_blocks(raw_text: str) -> list[str]:
     return _split_by_price_lines(raw_text)
 
 
-def detect_vehicle(text: str) -> tuple[str | None, str | None]:
+def detect_vehicle(text: str, original_text: str | None = None) -> tuple[str | None, str | None]:
+    """text باید نسخه‌ی compact (تک‌خطی) باشد تا الگوهایی که چند تکه را با
+    lookahead روی خطوط مختلف پیدا می‌کنند درست کار کنند. original_text (اگر
+    داده شود) نسخه‌ی چندخطی خام/نرمال‌شده است که برای استخراج «نام دقیق از
+    روی متن واقعی پیام» به _clean_detected_vehicle_name داده می‌شود — چون
+    اگر همان متن تک‌خطی compact را بدهیم، کل پیام یک «خط» حساب می‌شود و
+    کلمه‌ی توقف (مثل «فروش») همه‌چیز بعد از خودش را (از جمله نام واقعی
+    خودرو) قطع می‌کند.
+    """
     lowered = text.lower()
     for key, name, pattern in DETAILED_VEHICLE_PATTERNS:
         if re.search(pattern, lowered, flags=re.IGNORECASE):
-            return key, _clean_detected_vehicle_name(text, name)
+            return key, _clean_detected_vehicle_name(original_text or text, name)
     for key, name, pattern in VEHICLE_PATTERNS:
         if re.search(pattern, lowered, flags=re.IGNORECASE):
             return key, name
@@ -679,7 +700,7 @@ def parse_message(
 ) -> ParsedAd:
     normalized = normalize_text(raw_text)
     compact = compact_text(normalized)
-    vehicle_key, vehicle_name = detect_vehicle(compact)
+    vehicle_key, vehicle_name = detect_vehicle(compact, normalized)
     status = classify_status(compact, vehicle_key)
     ad = ParsedAd(
         source_message_id=source_message_id,
