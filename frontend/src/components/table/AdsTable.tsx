@@ -1,5 +1,5 @@
 import { motion } from "framer-motion";
-import { ExternalLink, Search } from "lucide-react";
+import { ChevronLeft, ChevronRight, ExternalLink, Search } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useAds } from "../../hooks/useAds";
 import { useAdsStore } from "../../store/adsStore";
@@ -32,6 +32,12 @@ export default function AdsTable() {
     [data?.items, filters.timeRange],
   );
 
+  const pageSize = filters.limit ?? 50;
+  const offset = filters.offset ?? 0;
+  const total = data?.total ?? 0;
+  const pageCount = Math.max(1, Math.ceil(total / pageSize));
+  const currentPage = Math.floor(offset / pageSize) + 1;
+
   if (isLoading) {
     return (
       <div className="glass-panel grid h-full place-items-center rounded-xl">
@@ -58,7 +64,7 @@ export default function AdsTable() {
           <div>
             <div className="text-sm font-black">جدول آگهی‌های امروز</div>
             <div className="mt-1 text-xs text-slate-400">
-              {formatCount(ads.length)} ردیف از داده‌های همان روز
+              {formatCount(ads.length)} از {formatCount(total)} ردیف از داده‌های همان روز
             </div>
           </div>
           <div className="flex min-w-0 flex-1 items-center justify-end gap-2 max-sm:w-full max-sm:flex-none">
@@ -224,6 +230,32 @@ export default function AdsTable() {
           )}
         </div>
       </div>
+
+      {pageCount > 1 && (
+        <div className="glass-panel mt-3 flex items-center justify-between gap-3 rounded-xl p-3">
+          <button
+            type="button"
+            onClick={() => setFilters({ offset: Math.max(0, offset - pageSize) })}
+            disabled={currentPage <= 1}
+            className="flex items-center gap-1 rounded-xl bg-white/10 px-3 py-2 text-sm font-bold transition hover:bg-white hover:text-slate-950 disabled:opacity-40 disabled:hover:bg-white/10 disabled:hover:text-inherit"
+          >
+            <ChevronRight size={16} />
+            قبلی
+          </button>
+          <div className="text-sm text-slate-400">
+            صفحه {formatCount(currentPage)} از {formatCount(pageCount)}
+          </div>
+          <button
+            type="button"
+            onClick={() => setFilters({ offset: Math.min((pageCount - 1) * pageSize, offset + pageSize) })}
+            disabled={currentPage >= pageCount}
+            className="flex items-center gap-1 rounded-xl bg-white/10 px-3 py-2 text-sm font-bold transition hover:bg-white hover:text-slate-950 disabled:opacity-40 disabled:hover:bg-white/10 disabled:hover:text-inherit"
+          >
+            بعدی
+            <ChevronLeft size={16} />
+          </button>
+        </div>
+      )}
 
       {selectedAdId && <AdDetailModal adId={selectedAdId} onClose={() => setSelectedAdId(undefined)} />}
     </>

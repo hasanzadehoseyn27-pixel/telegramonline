@@ -1420,6 +1420,165 @@ def search_priced_ads(
     ).fetchall()
 
 
+def _build_ads_where(
+    base_filters: list[str],
+    day_key: str | None,
+    query: str | None = None,
+    vehicle_keys: list[str] | None = None,
+    years: list[int] | None = None,
+    colors: list[str] | None = None,
+    min_price: int | None = None,
+    max_price: int | None = None,
+    min_mileage: int | None = None,
+    max_mileage: int | None = None,
+) -> tuple[str, list[object]]:
+    """شرط WHERE مشترک بین توابع list_*_for_web و count_*_for_web را می‌سازد
+    تا شمارش تعداد کل (برای صفحه‌بندی) دقیقاً همان فیلترهای جدول را ببیند.
+    """
+    day_key = day_key or today_day_key()
+    filters = [*base_filters, "day_key = ?"]
+    params: list[object] = [day_key]
+
+    if query:
+        like_where, like_params = _search_filters(query)
+        filters.append(like_where)
+        params.extend(like_params)
+
+    if vehicle_keys:
+        placeholders = ", ".join("?" for _ in vehicle_keys)
+        filters.append(f"vehicle_key IN ({placeholders})")
+        params.extend(vehicle_keys)
+
+    if years:
+        placeholders = ", ".join("?" for _ in years)
+        filters.append(f"year IN ({placeholders})")
+        params.extend(years)
+
+    if colors:
+        placeholders = ", ".join("?" for _ in colors)
+        filters.append(f"color IN ({placeholders})")
+        params.extend(colors)
+
+    if min_price is not None:
+        filters.append("price_million >= ?")
+        params.append(min_price)
+
+    if max_price is not None:
+        filters.append("price_million <= ?")
+        params.append(max_price)
+
+    if min_mileage is not None:
+        filters.append("mileage_km >= ?")
+        params.append(min_mileage)
+
+    if max_mileage is not None:
+        filters.append("mileage_km <= ?")
+        params.append(max_mileage)
+
+    return " AND ".join(filters), params
+
+
+def _count_ads_for_web(conn: sqlite3.Connection, base_filters: list[str], day_key: str | None, **kwargs) -> int:
+    where, params = _build_ads_where(base_filters, day_key, **kwargs)
+    row = conn.execute(
+        f"SELECT COUNT(DISTINCT dedup_key) AS c FROM ads WHERE {where}",
+        params,
+    ).fetchone()
+    return int(row["c"] or 0)
+
+
+def count_priced_ads_for_web(
+    conn: sqlite3.Connection,
+    query: str | None = None,
+    vehicle_keys: list[str] | None = None,
+    years: list[int] | None = None,
+    colors: list[str] | None = None,
+    min_price: int | None = None,
+    max_price: int | None = None,
+    min_mileage: int | None = None,
+    max_mileage: int | None = None,
+    day_key: str | None = None,
+) -> int:
+    return _count_ads_for_web(
+        conn,
+        ["status = 'sale'", "price_million IS NOT NULL"],
+        day_key,
+        query=query,
+        vehicle_keys=vehicle_keys,
+        years=years,
+        colors=colors,
+        min_price=min_price,
+        max_price=max_price,
+        min_mileage=min_mileage,
+        max_mileage=max_mileage,
+    )
+
+
+def count_unpriced_ads_for_web(
+    conn: sqlite3.Connection,
+    query: str | None = None,
+    vehicle_keys: list[str] | None = None,
+    years: list[int] | None = None,
+    colors: list[str] | None = None,
+    day_key: str | None = None,
+) -> int:
+    return _count_ads_for_web(
+        conn,
+        ["status = 'sale'", "price_million IS NULL"],
+        day_key,
+        query=query,
+        vehicle_keys=vehicle_keys,
+        years=years,
+        colors=colors,
+    )
+
+
+def count_used_ads_for_web(
+    conn: sqlite3.Connection,
+    query: str | None = None,
+    vehicle_keys: list[str] | None = None,
+    years: list[int] | None = None,
+    colors: list[str] | None = None,
+    min_price: int | None = None,
+    max_price: int | None = None,
+    min_mileage: int | None = None,
+    max_mileage: int | None = None,
+    day_key: str | None = None,
+) -> int:
+    return _count_ads_for_web(
+        conn,
+        ["status = 'sale'", "mileage_km IS NOT NULL"],
+        day_key,
+        query=query,
+        vehicle_keys=vehicle_keys,
+        years=years,
+        colors=colors,
+        min_price=min_price,
+        max_price=max_price,
+        min_mileage=min_mileage,
+        max_mileage=max_mileage,
+    )
+
+
+def count_buyer_ads_for_web(
+    conn: sqlite3.Connection,
+    query: str | None = None,
+    vehicle_keys: list[str] | None = None,
+    years: list[int] | None = None,
+    colors: list[str] | None = None,
+    day_key: str | None = None,
+) -> int:
+    return _count_ads_for_web(
+        conn,
+        ["status = 'buyer'"],
+        day_key,
+        query=query,
+        vehicle_keys=vehicle_keys,
+        years=years,
+        colors=colors,
+    )
+
+
 def list_priced_ads_for_web(
     conn: sqlite3.Connection,
     query: str | None = None,

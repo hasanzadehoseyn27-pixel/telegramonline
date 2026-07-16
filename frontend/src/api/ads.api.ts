@@ -28,6 +28,7 @@ export interface AdsResponse {
   limit: number;
   offset: number;
   count: number;
+  total: number;
 }
 
 function toApiParams(params?: AdsParams) {

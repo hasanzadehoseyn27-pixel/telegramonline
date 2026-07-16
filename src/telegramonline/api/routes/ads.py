@@ -12,6 +12,10 @@ from telegramonline.api.deps import get_db
 from telegramonline.api.schemas import AdOut, AdsPage
 
 from telegramonline.storage import (
+    count_buyer_ads_for_web,
+    count_priced_ads_for_web,
+    count_unpriced_ads_for_web,
+    count_used_ads_for_web,
     list_buyer_ads_for_web,
     list_priced_ads_for_web,
     list_unpriced_ads_for_web,
@@ -86,11 +90,24 @@ def get_priced_ads(
 
     items = [row_to_ad(row) for row in rows]
 
+    total = count_priced_ads_for_web(
+        db,
+        query=query,
+        vehicle_keys=vehicle_keys,
+        years=years,
+        colors=colors,
+        min_price=min_price,
+        max_price=max_price,
+        min_mileage=min_mileage,
+        max_mileage=max_mileage,
+    )
+
     return AdsPage(
         items=items,
         limit=limit,
         offset=offset,
         count=len(items),
+        total=total,
     )
 
 @router.get("/unpriced", response_model=AdsPage)
@@ -121,11 +138,20 @@ def get_unpriced_ads(
 
     items = [row_to_ad(row) for row in rows]
 
+    total = count_unpriced_ads_for_web(
+        db,
+        query=query,
+        vehicle_keys=vehicle_keys,
+        years=years,
+        colors=colors,
+    )
+
     return AdsPage(
         items=items,
         limit=limit,
         offset=offset,
         count=len(items),
+        total=total,
     )
 
 @router.get("/used", response_model=AdsPage)
@@ -164,11 +190,24 @@ def get_used_ads(
 
     items = [row_to_ad(row) for row in rows]
 
+    total = count_used_ads_for_web(
+        db,
+        query=query,
+        vehicle_keys=vehicle_keys,
+        years=years,
+        colors=colors,
+        min_price=min_price,
+        max_price=max_price,
+        min_mileage=min_mileage,
+        max_mileage=max_mileage,
+    )
+
     return AdsPage(
         items=items,
         limit=limit,
         offset=offset,
         count=len(items),
+        total=total,
     )
 
 
@@ -200,11 +239,20 @@ def get_buyer_ads(
 
     items = [row_to_ad(row) for row in rows]
 
+    total = count_buyer_ads_for_web(
+        db,
+        query=query,
+        vehicle_keys=vehicle_keys,
+        years=years,
+        colors=colors,
+    )
+
     return AdsPage(
         items=items,
         limit=limit,
         offset=offset,
         count=len(items),
+        total=total,
     )
 
 @router.get("/{ad_id}", response_model=AdDetailOut)

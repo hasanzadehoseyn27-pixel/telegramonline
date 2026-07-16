@@ -12,12 +12,14 @@ interface AdsStore {
   resetFilters: () => void;
 }
 
+const PAGE_SIZE = 50;
+
 const defaultFilters: AdsParams = {
   search: "",
   vehicleKeys: [],
   timeRange: 24,
   sort: "newest",
-  limit: 200,
+  limit: PAGE_SIZE,
   offset: 0,
 };
 
@@ -25,7 +27,7 @@ export const useAdsStore = create<AdsStore>((set) => ({
   activeTab: "priced",
   filters: defaultFilters,
 
-  setTab: (tab) => set({ activeTab: tab }),
+  setTab: (tab) => set((state) => ({ activeTab: tab, filters: { ...state.filters, offset: 0 } })),
 
   setFilters: (filters) =>
     set((state) => ({

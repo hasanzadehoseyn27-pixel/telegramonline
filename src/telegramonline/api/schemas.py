@@ -30,6 +30,7 @@ class AdsPage(BaseModel):
     limit: int
     offset: int
     count: int
+    total: int
 
 class ChannelOut(BaseModel):
     id: int
