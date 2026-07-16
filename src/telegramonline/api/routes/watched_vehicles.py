@@ -47,6 +47,10 @@ def get_watched_vehicles(db: Connection = Depends(get_db)):
     return [row_to_watched(row) for row in list_watched_vehicles(db)]
 
 
+class WatchedVehicleBulkCreate(BaseModel):
+    vehicles: list[WatchedVehicleCreate]
+
+
 @router.post("", response_model=WatchedVehicleOut)
 def add_watched(payload: WatchedVehicleCreate, db: Connection = Depends(get_db)):
     watched_id = add_watched_vehicle(db, payload.vehicle_key, payload.vehicle_name)
@@ -56,11 +60,25 @@ def add_watched(payload: WatchedVehicleCreate, db: Connection = Depends(get_db))
     return row_to_watched(row)
 
 
+@router.post("/bulk", response_model=list[WatchedVehicleOut])
+def add_watched_bulk(payload: WatchedVehicleBulkCreate, db: Connection = Depends(get_db)):
+    for item in payload.vehicles:
+        add_watched_vehicle(db, item.vehicle_key, item.vehicle_name)
+    return [row_to_watched(row) for row in list_watched_vehicles(db)]
+
+
 @router.delete("/{watched_id}")
 def remove_watched(watched_id: int, db: Connection = Depends(get_db)):
     ok = remove_watched_vehicle(db, watched_id)
     if not ok:
         raise HTTPException(status_code=404, detail="Watched vehicle not found")
+    return {"ok": True}
+
+
+@router.delete("")
+def remove_all_watched(db: Connection = Depends(get_db)):
+    for row in list_watched_vehicles(db):
+        remove_watched_vehicle(db, row["id"])
     return {"ok": True}
 
 

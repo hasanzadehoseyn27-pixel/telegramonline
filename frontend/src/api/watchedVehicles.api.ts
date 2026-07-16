@@ -21,6 +21,18 @@ export async function addWatchedVehicle(payload: {
   return response.data;
 }
 
+export async function addWatchedVehiclesBulk(
+  vehicles: { vehicle_key: string; vehicle_name?: string | null }[],
+): Promise<WatchedVehicle[]> {
+  const response = await client.post<WatchedVehicle[]>("/watched-vehicles/bulk", { vehicles });
+  return response.data;
+}
+
+export async function removeAllWatchedVehicles(): Promise<{ ok: boolean }> {
+  const response = await client.delete<{ ok: boolean }>("/watched-vehicles");
+  return response.data;
+}
+
 export async function removeWatchedVehicle(id: number): Promise<{ ok: boolean }> {
   const response = await client.delete<{ ok: boolean }>(`/watched-vehicles/${id}`);
   return response.data;
