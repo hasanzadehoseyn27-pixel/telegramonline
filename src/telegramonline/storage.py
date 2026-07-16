@@ -2371,7 +2371,11 @@ def get_live_cheapest_vehicles(
                     ORDER BY
                         price_million ASC,
                         id DESC
-                ) AS rn
+                ) AS rn,
+
+                COUNT(*) OVER (
+                    PARTITION BY vehicle_key
+                ) AS ad_count
 
             FROM ads
 
@@ -2398,7 +2402,8 @@ def get_live_cheapest_vehicles(
             phone,
             channel_username,
             source_message_id,
-            message_date
+            message_date,
+            ad_count
 
         FROM ranked
 

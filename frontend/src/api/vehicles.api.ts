@@ -14,6 +14,7 @@ export interface CheapestVehicle {
   source_message_id?: string | null;
   message_date: string | null;
   telegram_link: string | null;
+  ad_count: number;
 }
 
 export interface CheapestLivePage {

@@ -224,6 +224,7 @@ class CheapestLiveVehicleOut(BaseModel):
 
     message_date: str | None
     telegram_link: str | None
+    ad_count: int
 
 
 class CheapestLivePage(BaseModel):

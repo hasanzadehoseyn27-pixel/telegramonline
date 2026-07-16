@@ -52,6 +52,7 @@ def row_to_vehicle_card(
         message_date=row["message_date"],
 
         telegram_link=telegram_link,
+        ad_count=row["ad_count"],
     )
 
 

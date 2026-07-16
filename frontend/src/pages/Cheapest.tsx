@@ -108,8 +108,13 @@ export default function Cheapest() {
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <div className="truncate text-xl font-black">{item.vehicle_name ?? "نامشخص"}</div>
-                      <div className="mt-2 truncate text-sm text-slate-400 theme-muted">
-                        {item.color ?? "رنگ نامشخص"} · {item.year ?? "مدل نامشخص"}
+                      <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 truncate text-sm text-slate-400 theme-muted">
+                        <span>
+                          {item.color ?? "رنگ نامشخص"} · {item.year ?? "مدل نامشخص"}
+                        </span>
+                        <span className="rounded-full bg-white/10 px-2 py-0.5 text-[11px] font-bold text-cyan-100">
+                          از {formatCount(item.ad_count)} آگهی
+                        </span>
                       </div>
                     </div>
                     <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-cyan-300 text-slate-950 transition group-hover:bg-white">
