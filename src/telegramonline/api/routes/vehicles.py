@@ -7,7 +7,13 @@ from fastapi import APIRouter, Depends, Query
 from telegramonline.api.deps import get_db
 from telegramonline.api.routes.ads import row_to_ad
 from telegramonline.api.schemas import AdOut, CheapestLivePage, CheapestLiveVehicleOut
-from telegramonline.storage import count_live_cheapest_vehicles, get_live_cheapest_vehicles, list_ads_for_vehicle_key
+from telegramonline.storage import (
+    count_live_cheapest_vehicles,
+    get_live_cheapest_vehicles,
+    list_ads_for_vehicle_key,
+    today_day_key,
+    yesterday_day_key,
+)
 
 
 router = APIRouter(
@@ -72,16 +78,19 @@ def cheapest_live(
         default=0,
         ge=0,
     ),
+    day: str = Query(default="today", pattern="^(today|yesterday)$"),
     db: Connection = Depends(get_db),
 ):
+    day_key = yesterday_day_key() if day == "yesterday" else today_day_key()
 
     rows = get_live_cheapest_vehicles(
         db,
         limit=limit,
         offset=offset,
+        day_key=day_key,
     )
 
-    total = count_live_cheapest_vehicles(db)
+    total = count_live_cheapest_vehicles(db, day_key=day_key)
 
     return CheapestLivePage(
         items=[row_to_vehicle_card(row) for row in rows],
@@ -94,7 +103,9 @@ def cheapest_live(
 @router.get("/for-model", response_model=list[AdOut])
 def ads_for_model(
     vehicle_key: str = Query(...),
+    day: str = Query(default="today", pattern="^(today|yesterday)$"),
     db: Connection = Depends(get_db),
 ):
-    rows = list_ads_for_vehicle_key(db, vehicle_key)
+    day_key = yesterday_day_key() if day == "yesterday" else today_day_key()
+    rows = list_ads_for_vehicle_key(db, vehicle_key, day_key=day_key)
     return [row_to_ad(row) for row in rows]

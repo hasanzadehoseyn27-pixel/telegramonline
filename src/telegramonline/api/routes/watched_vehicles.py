@@ -14,6 +14,8 @@ from telegramonline.storage import (
     list_special_ads,
     list_watched_vehicles,
     remove_watched_vehicle,
+    today_day_key,
+    yesterday_day_key,
 )
 
 router = APIRouter(prefix="/watched-vehicles", tags=["watched-vehicles"])
@@ -66,9 +68,11 @@ def remove_watched(watched_id: int, db: Connection = Depends(get_db)):
 def get_special_ads(
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
+    day: str = Query(default="today", pattern="^(today|yesterday)$"),
     db: Connection = Depends(get_db),
 ):
-    rows = list_special_ads(db, limit=limit, offset=offset)
-    total = count_special_ads(db)
+    day_key = yesterday_day_key() if day == "yesterday" else today_day_key()
+    rows = list_special_ads(db, limit=limit, offset=offset, day_key=day_key)
+    total = count_special_ads(db, day_key=day_key)
     items = [row_to_ad(row) for row in rows]
     return AdsPage(items=items, limit=limit, offset=offset, count=len(items), total=total)

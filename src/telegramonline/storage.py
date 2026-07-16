@@ -2503,9 +2503,9 @@ def get_dashboard_summary(
         ],
     }
 
-def count_live_cheapest_vehicles(conn: sqlite3.Connection) -> int:
+def count_live_cheapest_vehicles(conn: sqlite3.Connection, day_key: str | None = None) -> int:
     """تعداد کل مدل‌های شناخته‌شده‌ای که امروز حداقل یک آگهی قیمت‌دار دارند."""
-    today = today_day_key()
+    day_key = day_key or today_day_key()
     row = conn.execute(
         """
         SELECT COUNT(DISTINCT vehicle_key) AS c
@@ -2516,16 +2516,20 @@ def count_live_cheapest_vehicles(conn: sqlite3.Connection) -> int:
             AND price_million IS NOT NULL
             AND vehicle_key IS NOT NULL
         """,
-        (today,),
+        (day_key,),
     ).fetchone()
     return int(row["c"] or 0)
 
 
-def list_ads_for_vehicle_key(conn: sqlite3.Connection, vehicle_key: str) -> list[sqlite3.Row]:
+def list_ads_for_vehicle_key(
+    conn: sqlite3.Connection,
+    vehicle_key: str,
+    day_key: str | None = None,
+) -> list[sqlite3.Row]:
     """همه‌ی آگهی‌های امروزِ یک vehicle_key دقیق، از کمترین به بیشترین قیمت
     (برای مودالِ «همه‌ی قیمت‌های پیداشده» وقتی روی یه کارت کمترین قیمت کلیک
     می‌شه)."""
-    today = today_day_key()
+    day_key = day_key or today_day_key()
     return conn.execute(
         """
         WITH ranked AS (
@@ -2539,7 +2543,7 @@ def list_ads_for_vehicle_key(conn: sqlite3.Connection, vehicle_key: str) -> list
         SELECT * FROM ranked WHERE rn = 1
         ORDER BY price_million ASC
         """,
-        (today, vehicle_key),
+        (day_key, vehicle_key),
     ).fetchall()
 
 
@@ -2547,6 +2551,7 @@ def get_live_cheapest_vehicles(
     conn: sqlite3.Connection,
     limit: int = 50,
     offset: int = 0,
+    day_key: str | None = None,
 ) -> list[sqlite3.Row]:
     """
     کمترین قیمت لحظه‌ای هر مدل خودرو برای صفحه کارت‌های سایت.
@@ -2559,11 +2564,33 @@ def get_live_cheapest_vehicles(
     - یک مورد برای هر خودرو
     """
 
-    today = today_day_key()
+    day_key = day_key or today_day_key()
 
     return conn.execute(
         """
-        WITH ranked AS (
+        WITH deduped AS (
+
+            SELECT
+                *,
+
+                ROW_NUMBER() OVER (
+                    PARTITION BY dedup_key
+                    ORDER BY id DESC
+                ) AS dedup_rn
+
+            FROM ads
+
+            WHERE
+                day_key = ?
+
+                AND status = 'sale'
+
+                AND price_million IS NOT NULL
+
+                AND vehicle_key IS NOT NULL
+        ),
+
+        ranked AS (
 
             SELECT
                 *,
@@ -2579,16 +2606,9 @@ def get_live_cheapest_vehicles(
                     PARTITION BY vehicle_key
                 ) AS ad_count
 
-            FROM ads
+            FROM deduped
 
-            WHERE
-                day_key = ?
-
-                AND status = 'sale'
-
-                AND price_million IS NOT NULL
-
-                AND vehicle_key IS NOT NULL
+            WHERE dedup_rn = 1
         )
 
 
@@ -2617,7 +2637,7 @@ def get_live_cheapest_vehicles(
         LIMIT ? OFFSET ?
         """,
         (
-            today,
+            day_key,
             limit,
             offset,
         ),
