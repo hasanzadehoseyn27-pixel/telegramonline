@@ -15,7 +15,7 @@ export default function Ads() {
   const day = filters.day ?? "today";
 
   return (
-    <div className="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)] gap-4">
+    <div className="grid h-[calc(100vh-170px)] min-h-0 grid-rows-[auto_minmax(0,1fr)] gap-4">
       <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
         <div className="flex min-w-0 flex-wrap gap-2">
           {tabButtons.map((item) => {

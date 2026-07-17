@@ -29,7 +29,7 @@ export default function AdsFilters() {
   }, [data?.vehicles, vehicleSearch]);
 
   return (
-    <aside className="glass-panel flex h-full min-h-0 flex-col rounded-xl p-4">
+    <aside className="glass-panel flex h-full min-h-0 flex-col overflow-hidden rounded-xl p-4">
       <div className="mb-4 flex items-center justify-between">
         <div className="flex items-center gap-2 font-black">
           <SlidersHorizontal size={18} />
