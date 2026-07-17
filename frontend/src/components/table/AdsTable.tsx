@@ -8,6 +8,7 @@ import AdDetailModal from "../modal/AdDetailModal";
 import { formatCount, formatDateTime, formatNumber, telegramLink } from "../../utils/format";
 
 const headers = ["خودرو", "قیمت", "مدل", "رنگ", "کارکرد", "تلفن", "کانال", "تاریخ و ساعت"];
+type PageItem = number | "dots";
 
 function isInsideTimeRange(ad: Ad, hours?: number) {
   if (!hours || hours >= 24 || !ad.message_date) {
@@ -22,6 +23,35 @@ function isInsideTimeRange(ad: Ad, hours?: number) {
   return Date.now() - time <= hours * 60 * 60 * 1000;
 }
 
+function getPaginationItems(currentPage: number, pageCount: number): PageItem[] {
+  if (pageCount <= 7) {
+    return Array.from({ length: pageCount }, (_item, index) => index + 1);
+  }
+
+  const pages = new Set<number>([1, pageCount, currentPage, currentPage - 1, currentPage + 1]);
+  if (currentPage <= 3) {
+    pages.add(2);
+    pages.add(3);
+    pages.add(4);
+  }
+  if (currentPage >= pageCount - 2) {
+    pages.add(pageCount - 1);
+    pages.add(pageCount - 2);
+    pages.add(pageCount - 3);
+  }
+
+  const sorted = [...pages].filter((page) => page >= 1 && page <= pageCount).sort((a, b) => a - b);
+  const items: PageItem[] = [];
+  sorted.forEach((page, index) => {
+    const previous = sorted[index - 1];
+    if (previous && page - previous > 1) {
+      items.push("dots");
+    }
+    items.push(page);
+  });
+  return items;
+}
+
 export default function AdsTable() {
   const { activeTab, filters, setFilters } = useAdsStore();
   const { data, isLoading, isError } = useAds(activeTab, filters);
@@ -34,13 +64,12 @@ export default function AdsTable() {
 
   const pageSize = filters.limit ?? 50;
   const offset = filters.offset ?? 0;
-  const total = data?.total ?? 0;
+  const total = data?.total ?? data?.count ?? 0;
   const pageCount = Math.max(1, Math.ceil(total / pageSize));
   const currentPage = Math.floor(offset / pageSize) + 1;
+  const paginationItems = getPaginationItems(currentPage, pageCount);
+  const goToPage = (page: number) => setFilters({ offset: (page - 1) * pageSize });
 
-  // اگه بعد از سرچ/فیلتر جدید، صفحه‌ی فعلی دیگه در محدوده‌ی نتایج نباشه
-  // (مثلاً روی صفحه ۵ بودیم و نتایج جدید فقط ۲ صفحه شدن)، برگرد صفحه‌ی اول
-  // به‌جای ماندن روی یک صفحه‌ی خالی با نوار صفحه‌بندی گمشده.
   useEffect(() => {
     if (total > 0 && offset >= total) {
       setFilters({ offset: 0 });
@@ -67,17 +96,17 @@ export default function AdsTable() {
   }
 
   return (
-    <div className="flex h-full min-h-0 min-w-0 flex-col gap-3">
+    <div className="flex h-full min-h-0 min-w-0 flex-col gap-1 pb-12 lg:pb-0">
       <div className="glass-panel flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-xl">
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 px-3 py-3 sm:px-4">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/10 px-3 py-1.5 sm:px-4">
           <div>
             <div className="text-sm font-black">جدول آگهی‌های امروز</div>
             <div className="mt-1 text-xs text-slate-400">
-              {formatCount(ads.length)} از {formatCount(total)} ردیف از داده‌های همان روز
+              {formatCount(ads.length)} از {formatCount(total)} ردیف
             </div>
           </div>
           <div className="flex min-w-0 flex-1 items-center justify-end gap-2 max-sm:w-full max-sm:flex-none">
-            <div className="flex h-10 min-w-0 flex-1 items-center gap-2 rounded-xl border border-white/10 bg-slate-950/70 px-3 sm:max-w-sm">
+            <div className="flex h-9 min-w-0 flex-1 items-center gap-2 rounded-xl border border-white/10 bg-slate-950/70 px-3 sm:h-10 sm:max-w-sm">
               <Search size={17} className="shrink-0 text-slate-500" />
               <input
                 value={filters.search ?? ""}
@@ -89,7 +118,7 @@ export default function AdsTable() {
             <select
               value={filters.sort ?? "newest"}
               onChange={(event) => setFilters({ sort: event.target.value as typeof filters.sort })}
-              className="h-10 rounded-xl border border-white/10 bg-slate-950/70 px-2 text-xs font-bold outline-none sm:px-3"
+              className="h-9 rounded-xl border border-white/10 bg-slate-950/70 px-2 text-xs font-bold outline-none sm:h-10 sm:px-3"
             >
               <option value="newest">جدیدترین</option>
               <option value="oldest">قدیمی‌ترین</option>
@@ -98,14 +127,11 @@ export default function AdsTable() {
               <option value="year_desc">مدل بالاتر</option>
               <option value="mileage_asc">کارکرد کمتر</option>
             </select>
-            <div className="hidden rounded-full border border-cyan-300/20 bg-cyan-300/10 px-3 py-1 text-xs font-bold text-cyan-100 sm:block">
-              زنده
-            </div>
           </div>
         </div>
 
         <div className="min-h-0 min-w-0 flex-1 overflow-auto scroll-area">
-          <table className="w-full min-w-[760px] border-separate border-spacing-0 text-sm">
+          <table className="w-full min-w-[720px] border-separate border-spacing-0 text-sm">
             <thead className="sticky top-0 z-10 bg-slate-950/95 backdrop-blur">
               <tr className="text-slate-400">
                 {headers.map((header) => (
@@ -175,24 +201,51 @@ export default function AdsTable() {
       </div>
 
       {pageCount > 1 && (
-        <div className="glass-panel flex shrink-0 flex-wrap items-center justify-center gap-2 rounded-xl p-2.5 sm:justify-between sm:gap-3 sm:p-3">
+        <div className="glass-panel flex shrink-0 flex-wrap items-center justify-center gap-1.5 rounded-xl p-2 max-lg:fixed max-lg:bottom-24 max-lg:left-4 max-lg:right-4 max-lg:z-50 max-sm:left-3 max-sm:right-3 sm:justify-between">
           <button
             type="button"
             onClick={() => setFilters({ offset: Math.max(0, offset - pageSize) })}
             disabled={currentPage <= 1}
-            className="flex shrink-0 items-center gap-1 rounded-xl bg-white/10 px-2.5 py-2 text-xs font-bold transition sm:px-3 sm:text-sm hover:bg-white hover:text-slate-950 disabled:opacity-40 disabled:hover:bg-white/10 disabled:hover:text-inherit"
+            className="flex h-9 shrink-0 items-center gap-1 rounded-full bg-white/10 px-3 text-xs font-bold transition hover:bg-white hover:text-slate-950 disabled:opacity-40 disabled:hover:bg-white/10 disabled:hover:text-inherit"
           >
             <ChevronRight size={16} />
             قبلی
           </button>
-          <div className="text-sm text-slate-400">
-            صفحه {formatCount(currentPage)} از {formatCount(pageCount)}
+
+          <div className="flex max-w-full min-w-0 items-center justify-center gap-1 rounded-full bg-slate-950/55 p-1">
+            {paginationItems.map((item, index) =>
+              item === "dots" ? (
+                <span
+                  key={`dots-${index}`}
+                  className="grid h-8 w-8 place-items-center rounded-full text-xs font-black text-slate-500"
+                >
+                  ...
+                </span>
+              ) : (
+                <button
+                  key={item}
+                  type="button"
+                  onClick={() => goToPage(item)}
+                  className={[
+                    "grid h-8 w-8 place-items-center rounded-full text-xs font-black transition",
+                    item === currentPage
+                      ? "bg-cyan-300 text-slate-950 shadow-lg shadow-cyan-300/20"
+                      : "text-slate-300 hover:bg-white/10 hover:text-white",
+                  ].join(" ")}
+                  aria-label={`صفحه ${item}`}
+                  aria-current={item === currentPage ? "page" : undefined}
+                >
+                  {formatCount(item)}
+                </button>
+              ),
+            )}
           </div>
+
           <button
             type="button"
             onClick={() => setFilters({ offset: Math.min((pageCount - 1) * pageSize, offset + pageSize) })}
             disabled={currentPage >= pageCount}
-            className="flex shrink-0 items-center gap-1 rounded-xl bg-white/10 px-2.5 py-2 text-xs font-bold transition sm:px-3 sm:text-sm hover:bg-white hover:text-slate-950 disabled:opacity-40 disabled:hover:bg-white/10 disabled:hover:text-inherit"
+            className="flex h-9 shrink-0 items-center gap-1 rounded-full bg-white/10 px-3 text-xs font-bold transition hover:bg-white hover:text-slate-950 disabled:opacity-40 disabled:hover:bg-white/10 disabled:hover:text-inherit"
           >
             بعدی
             <ChevronLeft size={16} />

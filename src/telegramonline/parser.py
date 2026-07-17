@@ -59,6 +59,12 @@ VEHICLE_PATTERNS: list[tuple[str, str, str]] = [
 ]
 
 DETAILED_VEHICLE_PATTERNS: list[tuple[str, str, str]] = [
+    ("suzuki_jimny", "\u0633\u0648\u0632\u0648\u06a9\u06cc \u062c\u06cc\u0645\u0646\u06cc", r"\b(?:\u0633\u0648\u0632\u0648\u06a9\u06cc\s*)?\u062c\u06cc\u0645\u0646\u06cc\b|\bsuzuki\s*jimny\b|\bjimny\b"),
+    ("soren_pars", "\u0633\u0648\u0631\u0646 \u067e\u0627\u0631\u0633", r"\b\u0633\u0648\u0631\u0646\s*\u067e\u0627\u0631\u0633\b"),
+    ("rana_metal_disc", "\u0631\u0627\u0646\u0627 \u0641\u0644\u0632 \u062f\u06cc\u0633\u06a9\u06cc", r"\b\u0631\u0627\u0646\u0627\b(?=.*\u0641\u0644\u0632)(?=.*\u062f\u06cc\u0633\u06a9)"),
+    ("rana_plus", "\u0631\u0627\u0646\u0627 \u067e\u0644\u0627\u0633", r"\b\u0631\u0627\u0646\u0627\s*\u067e\u0644\u0627\u0633\b|\b\u0631\u0627\u0646\u0627\u067e\u0644\u0627\u0633\b"),
+    ("tara_v4", "\u062a\u0627\u0631\u0627 V4", r"\b\u062a\u0627\u0631\u0627\s*(?:v\s*4|v4|\u0648\u06cc\s*4|\u0648\u06cc\s*\u0686\u0647\u0627\u0631)\b"),
+    ("arisan", "\u0622\u0631\u06cc\u0633\u0627\u0646", r"[\u0622\u0627]\u0631\u06cc\u0633\u0627\u0646"),
     ("peugeot_207_pana_plus_manual_rim", "۲۰۷ پانا ارتقا پلاس دنده رینگ", r"(?:207|۲۰۷)\s*(?:پانا|پاناروما|پانوراما).*(?:ارتقا|ارتقاء).*(?:پلاس).*(?:دنده).*(?<!بدون\s)(?<!بدون)(?:رینگ)"),
     ("peugeot_207_pana_plus_manual_cap", "۲۰۷ پانا ارتقا پلاس دنده قالپاق", r"(?:207|۲۰۷)\s*(?:پانا|پاناروما|پانوراما).*(?:ارتقا|ارتقاء).*(?:پلاس).*(?:دنده).*(?:قالپاق|بدون\s*رینگ)"),
     ("peugeot_207_pana_upgrade_manual", "۲۰۷ دنده پانا ارتقا", r"(?=.*(?:207|۲۰۷))(?=.*(?:پانا|پاناروما|پانوراما))(?=.*(?:ارتقا|ارتقاء))(?=.*(?:دنده)).*"),
@@ -231,7 +237,23 @@ _EMOJI_RE = re.compile(
 )
 
 
-def _clean_detected_vehicle_name(text: str, fallback: str) -> str:
+CANONICAL_NAME_KEYS = {
+    "arisan",
+    "rira",
+    "suzuki_jimny",
+}
+
+
+VEHICLE_NAME_NOISE_WORDS_RE = re.compile(r"\b(?:جدید|روز|داغ|صب|صبح|سند\s*آماده|سنداماده|کفی)\b", re.IGNORECASE)
+
+
+ACCESSORY_SPAM_RE = re.compile(
+    r"مالتی\s*مدیا|سوکت|usb|aux|sd\s*card|بلوتوث|قابل\s*نصب\s*فابریک|قیمت\s*نمایندگی|ضبط|رادیو\s*پخش",
+    re.IGNORECASE,
+)
+
+
+def _clean_detected_vehicle_name(text: str, fallback: str, matched_pattern: str | None = None) -> str:
     """Return a compact model name from the actual message text.
 
     For detailed matches we want the UI to say things like
@@ -252,13 +274,17 @@ def _clean_detected_vehicle_name(text: str, fallback: str) -> str:
         cleaned = re.sub(r"(?<![0-9۰-۹])(?:14\d{2}|40[0-9]|20[12]\d|2[3-6])(?![0-9۰-۹])", " ", cleaned)
         for color in COLORS:
             cleaned = re.sub(re.escape(color), " ", cleaned, flags=re.IGNORECASE)
+        cleaned = VEHICLE_NAME_NOISE_WORDS_RE.sub(" ", cleaned)
         cleaned = re.sub(r"\b\d{4,6}\b", " ", cleaned)
         cleaned = re.sub(r"[#:_،؛|/\\\-]+", " ", cleaned)
         cleaned = _EMOJI_RE.sub(" ", cleaned)
         cleaned = re.sub(r"\s+", " ", cleaned).strip()
+        cleaned = re.sub(r"\b(207)\s+\1\b", r"\1", cleaned)
         if not cleaned:
             continue
         score = 0
+        if matched_pattern and re.search(matched_pattern, compact_text(line).lower(), flags=re.IGNORECASE):
+            score += 1000
         if re.search(r"(?:207|۲۰۷|پانا|ارتقا|کوییک|شاهین|تارا|سورن|چانگان|هایما|جک|تیگو|آریزو|لاماری|لوکانو|نیسان)", cleaned, re.IGNORECASE):
             score += 10
         score += min(len(cleaned), 70)
@@ -272,7 +298,7 @@ BUYER_RE = re.compile(r"خریدار|خریدارم|می\s*خوام|میخوام
 SOLD_RE = re.compile(r"انجام\s*شد|فروخته|تمام\s*شد|تموم\s*شد|اوکی\s*شد")
 SPAM_RE = re.compile(
     r"بازدید|ربات|تبلیغ|کانال\s*(?:واتساپ|روبیکا|تلگرام)|https?://|t\.me/|"
-    r"بروزرسانی\s*قیمت|به\s*روزرسانی\s*قیمت|قیمت\s*خودروهای\s*پرفروش|قیمت\s*دلار|"
+    r"بروزرسانی\s*قیمت|به\s*روزرسانی\s*قیمت|استعلام\s*قیمت|قیمت\s*خودروهای\s*(?:بازار|پرفروش)|قیمت\s*دلار|"
     r"این\s*رسانه"
 )
 PHONE_RE = re.compile(r"(?<!\d)(?:\+?98|0)?9\d{9}(?!\d)")
@@ -417,14 +443,18 @@ def detect_vehicle(text: str, original_text: str | None = None) -> tuple[str | N
     lowered = text.lower()
     for key, name, pattern in DETAILED_VEHICLE_PATTERNS:
         if re.search(pattern, lowered, flags=re.IGNORECASE):
-            return key, _clean_detected_vehicle_name(original_text or text, name)
+            if key in CANONICAL_NAME_KEYS:
+                return key, name
+            return key, _clean_detected_vehicle_name(original_text or text, name, pattern)
     for key, name, pattern in VEHICLE_PATTERNS:
         if re.search(pattern, lowered, flags=re.IGNORECASE):
             # مثل الگوهای «تفصیلی»، اینجا هم به‌جای اسم ثابت و عمومی (مثلاً
             # «پژو 207»)، سعی می‌کنیم اسم دقیق‌تری که فروشنده واقعاً نوشته
             # (مثلاً «۲۰۷ دنده پانورما با رینگ شرکتی») رو از خود پیام دربیاریم.
             # اگر چیز بهتری پیدا نشد، همون اسم ثابت fallback می‌مونه.
-            cleaned = _clean_detected_vehicle_name(original_text or text, name)
+            if key in CANONICAL_NAME_KEYS:
+                return key, name
+            cleaned = _clean_detected_vehicle_name(original_text or text, name, pattern)
             if key in SPLIT_BY_EXTRACTED_NAME_KEYS and cleaned and cleaned != name:
                 derived_key = f"{key}::{cleaned}"
                 return derived_key, cleaned
@@ -540,8 +570,10 @@ def classify_status(text: str, vehicle_key: str | None) -> str:
         return "sold"
     if BUYER_RE.search(text):
         return "buyer"
+    if ACCESSORY_SPAM_RE.search(text):
+        return "spam"
     if SPAM_RE.search(text) and (
-        not vehicle_key or re.search(r"بروزرسانی\s*قیمت|قیمت\s*خودروهای\s*پرفروش|قیمت\s*دلار|این\s*رسانه", text)
+        not vehicle_key or re.search(r"بروزرسانی\s*قیمت|استعلام\s*قیمت|قیمت\s*خودروهای\s*(?:بازار|پرفروش)|قیمت\s*دلار|این\s*رسانه", text)
     ):
         return "spam"
     if "قیمت" in text and "☎" in text:

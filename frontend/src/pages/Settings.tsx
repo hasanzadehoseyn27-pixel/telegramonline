@@ -61,8 +61,8 @@ export default function Settings() {
 
       <section className="grid min-h-0 grid-cols-[380px_minmax(0,1fr)] gap-4 max-xl:grid-cols-1">
         <div className="glass-panel rounded-2xl p-4">
-          <div className="mb-4 flex items-center gap-2 text-lg font-black">
-            <Radio className="text-cyan-200" />
+          <div className="mb-4 flex items-center gap-2 text-lg font-black text-white">
+            <Radio className="text-white" />
             اضافه کردن گروه
           </div>
           <div className="flex h-11 overflow-hidden rounded-xl border border-white/10 bg-slate-950/70">

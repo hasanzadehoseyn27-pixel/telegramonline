@@ -286,6 +286,93 @@ class ParserTests(unittest.TestCase):
         self.assertIsNone(ad.price_million)
         self.assertEqual(ad.year, 1405)
 
+    def test_special_soren_pars_name_comes_from_vehicle_line(self) -> None:
+        ad = parse_message(
+            "special_soren",
+            """
+            سورن پارس تحویل برج ۴ * ۱۴۰۵ مشکی
+
+            دریچه برقی 🔥 🔥 🔥
+
+            💥 1/695/000/000 💥
+
+            شب گلها ✨
+
+            ☎️ 09188522616
+            ☎️ 09900641711
+            """,
+        )
+        self.assertEqual(ad.vehicle_key, "soren_pars")
+        self.assertEqual(ad.vehicle_name, "سورن پارس")
+        self.assertEqual(ad.price_million, 1695)
+
+    def test_special_new_domestic_models_are_detected(self) -> None:
+        cases = [
+            ("arisan", "اریسان سفید ۴۰۵ برج ۱۲\nقابل تحویل پارکینگ گلها\n\n۱۵۶۰\n۰۹۱۶۸۱۹۰۹۰۰", "arisan"),
+            ("rana_plus", "راناپلاس جدید تحویل برج ۴ ۱۴۰۵ سفید\n\n💥 1/690/000/000 💥", "rana_plus"),
+            ("rana_disc", "رانا فلز دیسکی ۴۰۵ برج ۲ سفید\n۵۰۰ آمپر\nب شرط ۶۰۰ واریزی\n\n۱۶۸۰", "rana_metal_disc"),
+            ("tara_v4", "تاراv4مشکی روز\n\n🔥🔥🔥 ۲/۸۰۰", "tara_v4"),
+            ("rira", "ریرا سفید جدید ۴۰۵ روز\nسنداماده\nصب کفی\n\n💵۳٫۶۵۵🔥🔥🔥", "rira"),
+        ]
+        for message_id, text, expected_key in cases:
+            with self.subTest(message_id=message_id):
+                ad = parse_message(message_id, text)
+                self.assertEqual(ad.vehicle_key, expected_key)
+
+    def test_special_imported_suzuki_jimny_detected(self) -> None:
+        ad = parse_message(
+            "jimny",
+            """
+            سوزوکی جیمنی ۳ درب اتومات
+            مشکی
+            2025
+            با پلاک ✅
+            فردا کفی ✅
+
+            5/830
+            09128990098
+            """,
+        )
+        self.assertEqual(ad.vehicle_key, "suzuki_jimny")
+        self.assertEqual(ad.vehicle_name, "سوزوکی جیمنی")
+        self.assertEqual(ad.year, 2025)
+        self.assertEqual(ad.price_million, 5830)
+
+    def test_accessory_message_is_spam_not_special_vehicle_sale(self) -> None:
+        ad = parse_message(
+            "accessory",
+            """
+            مالتی مدیا فابریک و آکبند دنا پلاس
+            دارای ورودی USB, AUX, SD CARD و بلوتوث
+            قیمت نمایندگی : 14.000.000
+            قیمت فروش در سفارش مدیران : 11.000.000
+            قابل نصب فابریکی و سوکت به سوکت روی تمامی محصولات دنا،دنا پلاس
+            #ضبط #پخش #رادیوپخش #دنا #دناپلاس
+            📳 09203721467
+            """,
+        )
+        self.assertEqual(ad.status, "spam")
+
+    def test_market_price_snapshot_is_spam_even_with_vehicle_names(self) -> None:
+        ad = parse_message(
+            "price_snapshot",
+            """
+            🚗 آخرین استعلام قیمت خودروهای بازار ایران
+            راناپلاس ۱,۷۰۵
+            دنا اتومات آپشنال ۲,۳۶۵
+            شاهین اتومات پلاس ۳,۶۰۰
+            """,
+        )
+        self.assertEqual(ad.status, "spam")
+
+    def test_repeated_207_prefix_is_collapsed_in_display_name(self) -> None:
+        ad = parse_message(
+            "dup207",
+            "۲۰۷ ۲۰۷ پانا دنده با رینگ شرکتی\n۴۰۵ روز تحویل فردا کفی\n۲/۱۳۸\n09129641957",
+        )
+        self.assertTrue(ad.vehicle_key)
+        self.assertNotIn("۲۰۷ ۲۰۷", ad.vehicle_name or "")
+
 
 if __name__ == "__main__":
     unittest.main()

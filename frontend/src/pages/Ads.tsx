@@ -18,11 +18,11 @@ export default function Ads() {
 
   return (
     <div
-      className="grid h-full min-h-0 w-full max-w-full grid-rows-[auto_minmax(0,1fr)] gap-4"
+      className="grid h-full min-h-0 w-full max-w-full grid-rows-[auto_minmax(0,1fr)] gap-1"
       style={{ width: "100%", maxWidth: "100%" }}
     >
-      <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
-        <div className="flex min-w-0 flex-wrap gap-2 max-sm:hidden">
+      <div className="flex min-w-0 flex-wrap items-center justify-between gap-1">
+        <div className="grid min-w-0 flex-1 grid-cols-2 gap-1.5 sm:flex sm:flex-wrap sm:gap-1.5">
           {tabButtons.map((item) => {
             const Icon = item.icon;
             return (
@@ -30,19 +30,15 @@ export default function Ads() {
                 key={item.tab}
                 onClick={() => setTab(item.tab)}
                 className={[
-                  "flex h-10 shrink-0 items-center gap-2 rounded-xl px-4 text-sm font-black transition",
+                  "flex h-9 min-w-0 items-center justify-center gap-1.5 rounded-xl px-2 text-xs font-black transition sm:shrink-0 sm:gap-2 sm:px-3 sm:text-sm",
                   activeTab === item.tab ? "bg-white text-slate-950" : "bg-white/10 hover:bg-white/20",
                 ].join(" ")}
               >
-                <Icon size={17} />
-                {item.title}
+                <Icon size={16} />
+                <span className="truncate">{item.title}</span>
               </button>
             );
           })}
-        </div>
-
-        <div className="flex h-10 shrink-0 items-center rounded-xl bg-white/5 px-3 text-xs font-black text-cyan-100 sm:hidden">
-          {tabButtons.find((t) => t.tab === activeTab)?.title}
         </div>
 
         <FiltersToggleButton open={filtersOpen} onClick={() => setFiltersOpen((v) => !v)} />

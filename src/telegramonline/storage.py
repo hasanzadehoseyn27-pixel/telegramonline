@@ -1536,9 +1536,12 @@ def _build_ads_where(
         params.extend(like_params)
 
     if vehicle_keys:
-        placeholders = ", ".join("?" for _ in vehicle_keys)
-        filters.append(f"vehicle_key IN ({placeholders})")
-        params.extend(vehicle_keys)
+        parts = []
+        for key in vehicle_keys:
+            parts.append("(vehicle_key = ? OR vehicle_key LIKE ?)")
+            params.append(key)
+            params.append(f"{key}::%")
+        filters.append("(" + " OR ".join(parts) + ")")
 
     if years:
         placeholders = ", ".join("?" for _ in years)
@@ -1800,9 +1803,12 @@ def list_priced_ads_for_web(
         params.extend(like_params)
 
     if vehicle_keys:
-        placeholders = ", ".join("?" for _ in vehicle_keys)
-        filters.append(f"vehicle_key IN ({placeholders})")
-        params.extend(vehicle_keys)
+        parts = []
+        for key in vehicle_keys:
+            parts.append("(vehicle_key = ? OR vehicle_key LIKE ?)")
+            params.append(key)
+            params.append(f"{key}::%")
+        filters.append("(" + " OR ".join(parts) + ")")
 
     if years:
         placeholders = ", ".join("?" for _ in years)

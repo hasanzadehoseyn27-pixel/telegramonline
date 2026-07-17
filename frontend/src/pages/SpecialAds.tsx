@@ -108,7 +108,7 @@ export default function SpecialAds() {
           </div>
         </section>
 
-        <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col gap-3">
+        <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col gap-2 pb-28 lg:pb-0">
           <div className="flex min-h-0 min-w-0 flex-1 gap-0">
             <section className="glass-panel flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-xl">
               <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 p-4">
@@ -178,31 +178,29 @@ export default function SpecialAds() {
             </FiltersDrawer>
           </div>
 
-          {pageCount > 1 && (
-            <div className="glass-panel flex shrink-0 flex-wrap items-center justify-center gap-2 rounded-xl p-2.5 sm:justify-between sm:gap-3 sm:p-3">
-              <button
-                type="button"
-                onClick={() => setPage((p) => Math.max(0, p - 1))}
-                disabled={page === 0}
-                className="flex shrink-0 items-center gap-1 rounded-xl bg-white/10 px-2.5 py-2 text-xs font-bold transition sm:px-3 sm:text-sm hover:bg-white hover:text-slate-950 disabled:opacity-40 disabled:hover:bg-white/10 disabled:hover:text-inherit"
-              >
-                <ChevronRight size={16} />
-                قبلی
-              </button>
-              <div className="text-sm text-slate-400">
-                صفحه {formatCount(page + 1)} از {formatCount(pageCount)}
-              </div>
-              <button
-                type="button"
-                onClick={() => setPage((p) => Math.min(pageCount - 1, p + 1))}
-                disabled={page >= pageCount - 1}
-                className="flex shrink-0 items-center gap-1 rounded-xl bg-white/10 px-2.5 py-2 text-xs font-bold transition sm:px-3 sm:text-sm hover:bg-white hover:text-slate-950 disabled:opacity-40 disabled:hover:bg-white/10 disabled:hover:text-inherit"
-              >
-                بعدی
-                <ChevronLeft size={16} />
-              </button>
+          <div className="glass-panel flex shrink-0 flex-wrap items-center justify-center gap-2 rounded-xl p-2.5 max-lg:fixed max-lg:bottom-24 max-lg:left-4 max-lg:right-4 max-lg:z-50 max-sm:left-3 max-sm:right-3 sm:justify-between sm:gap-3 sm:p-3">
+            <button
+              type="button"
+              onClick={() => setPage((p) => Math.max(0, p - 1))}
+              disabled={page === 0}
+              className="flex h-9 shrink-0 items-center gap-1 rounded-full bg-white/10 px-3 text-xs font-bold transition hover:bg-white hover:text-slate-950 disabled:opacity-40 disabled:hover:bg-white/10 disabled:hover:text-inherit"
+            >
+              <ChevronRight size={16} />
+              قبلی
+            </button>
+            <div className="rounded-full bg-slate-950/55 px-4 py-2 text-sm font-bold text-slate-300">
+              صفحه {formatCount(page + 1)} از {formatCount(pageCount)}
             </div>
-          )}
+            <button
+              type="button"
+              onClick={() => setPage((p) => Math.min(pageCount - 1, p + 1))}
+              disabled={page >= pageCount - 1}
+              className="flex h-9 shrink-0 items-center gap-1 rounded-full bg-white/10 px-3 text-xs font-bold transition hover:bg-white hover:text-slate-950 disabled:opacity-40 disabled:hover:bg-white/10 disabled:hover:text-inherit"
+            >
+              بعدی
+              <ChevronLeft size={16} />
+            </button>
+          </div>
         </div>
       </div>
 

@@ -72,7 +72,7 @@ export function FiltersToggleButton({ open, onClick }: { open: boolean; onClick:
       type="button"
       onClick={onClick}
       className={[
-        "flex h-10 shrink-0 items-center gap-2 rounded-xl px-4 text-sm font-black transition",
+        "flex h-9 shrink-0 items-center gap-2 rounded-xl px-3 text-xs font-black transition sm:px-3 sm:text-sm",
         open ? "bg-white text-slate-950" : "bg-white/10 hover:bg-white/20",
       ].join(" ")}
     >
