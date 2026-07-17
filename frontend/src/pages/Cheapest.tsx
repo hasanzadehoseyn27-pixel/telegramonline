@@ -147,7 +147,7 @@ export default function Cheapest() {
   }, [items, search]);
 
   return (
-    <div className="grid h-[calc(100vh-170px)] max-sm:h-[calc(100vh-250px)] min-h-0 grid-rows-[auto_minmax(0,1fr)_auto] gap-4">
+    <div className="grid h-[calc(100vh-105px)] max-sm:h-[calc(100vh-165px)] min-h-0 grid-rows-[auto_minmax(0,1fr)_auto] gap-4">
       <div className="glass-panel rounded-2xl p-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>

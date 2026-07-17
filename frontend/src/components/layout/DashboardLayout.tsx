@@ -44,7 +44,7 @@ export default function DashboardLayout({ children }: Props) {
       <Sidebar />
       <Header theme={theme} onToggleTheme={() => setTheme((value) => (value === "dark" ? "light" : "dark"))} />
       <main className="relative mr-64 h-screen overflow-hidden pt-20 max-lg:mr-0 max-sm:pb-20 max-sm:pt-16">
-        <div className="h-full overflow-hidden px-4 py-4 sm:px-5 lg:px-7">{children}</div>
+        <div className="h-full overflow-hidden px-4 py-2 sm:px-5 lg:px-7">{children}</div>
       </main>
     </div>
   );

@@ -18,7 +18,7 @@ export default function Ads() {
 
   return (
     <div
-      className="grid h-[calc(100vh-170px)] max-sm:h-[calc(100vh-250px)] min-h-0 w-full max-w-full grid-rows-[auto_minmax(0,1fr)] gap-4"
+      className="grid h-[calc(100vh-105px)] max-sm:h-[calc(100vh-165px)] min-h-0 w-full max-w-full grid-rows-[auto_minmax(0,1fr)] gap-4"
       style={{ width: "100%", maxWidth: "100%" }}
     >
       <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
