@@ -445,7 +445,13 @@ async def _handle_new_message(event, client, conn, known: set[str], known_groups
             username,
             event.message,
         )
-        return
+        # اگه این گروه *هم* به‌عنوان کانال ثبت و join شده باشه (مثلاً
+        # BAZARBOZORGEKHODROIRAN که هم گروه منبعه هم کانال)، پیام‌های خودش
+        # رو هم مثل یک کانال عادی پردازش می‌کنیم تا توی «مانیتور زنده» شمرده
+        # شوند — وگرنه فقط برای کشف کانال جدید استفاده می‌شد و تعداد
+        # پیام‌های خودرویی خودِ گروه همیشه صفر می‌ماند.
+        if username not in known:
+            return
     if not username or username not in known:
         return
     if not event.message.message:
