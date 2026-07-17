@@ -1,33 +1,68 @@
 import { ChevronLeft, ChevronRight, ExternalLink, Search, Sparkles } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
-import { getPricedAds } from "../api/ads.api";
+import { useEffect, useMemo, useState } from "react";
+import { getPricedAds, type Ad } from "../api/ads.api";
 import { CURATED_VEHICLES } from "../data/curatedVehicles";
 import AdDetailModal from "../components/modal/AdDetailModal";
+import AdsFilters from "../components/filters/AdsFilters";
+import FiltersDrawer from "../components/filters/FiltersDrawer";
+import { useAdsStore } from "../store/adsStore";
 import { formatCount, formatDateTime, formatNumber } from "../utils/format";
 
 const PAGE_SIZE = 50;
 const ALL_KEYS = CURATED_VEHICLES.map((v) => v.key);
 
+function isInsideTimeRange(ad: Ad, hours?: number) {
+  if (!hours || hours >= 24 || !ad.message_date) return true;
+  const time = new Date(ad.message_date).getTime();
+  if (Number.isNaN(time)) return true;
+  return Date.now() - time <= hours * 60 * 60 * 1000;
+}
+
 export default function SpecialAds() {
   const [query, setQuery] = useState("");
-  const [tableSearch, setTableSearch] = useState("");
   const [day, setDay] = useState<"today" | "yesterday">("today");
   const [page, setPage] = useState(0);
   const [selectedAdId, setSelectedAdId] = useState<number>();
+  const { filters } = useAdsStore();
+
+  // اگه کاربر از فیلترها چند مدل خاص رو تیک زده، فقط همون‌ها (که باید عضو
+  // لیست تضمین‌شده هم باشن)؛ وگرنه همه‌ی لیست تضمین‌شده.
+  const effectiveVehicleKeys = useMemo(() => {
+    if (!filters.vehicleKeys?.length) return ALL_KEYS;
+    const narrowed = filters.vehicleKeys.filter((k) => ALL_KEYS.includes(k));
+    return narrowed.length > 0 ? narrowed : ALL_KEYS;
+  }, [filters.vehicleKeys]);
 
   const { data: adsPage, isLoading } = useQuery({
-    queryKey: ["special-ads", day, page, tableSearch],
+    queryKey: ["special-ads", day, page, filters.search, filters.minPrice, filters.maxPrice, filters.maxMileage, effectiveVehicleKeys],
     queryFn: () =>
       getPricedAds({
-        vehicleKeys: ALL_KEYS,
+        vehicleKeys: effectiveVehicleKeys,
         day,
-        search: tableSearch || undefined,
+        search: filters.search || undefined,
+        minPrice: filters.minPrice,
+        maxPrice: filters.maxPrice,
+        maxMileage: filters.maxMileage,
         limit: PAGE_SIZE,
         offset: page * PAGE_SIZE,
       }),
     refetchInterval: 5000,
   });
+
+  const ads = useMemo(
+    () => (adsPage?.items ?? []).filter((ad) => isInsideTimeRange(ad, filters.timeRange)),
+    [adsPage?.items, filters.timeRange],
+  );
+  const total = adsPage?.total ?? 0;
+  const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
+
+  // بعد از تغییر فیلتر/سرچ، اگه صفحه‌ی فعلی دیگه در محدوده نباشه برگرد صفحه‌ی اول
+  useEffect(() => {
+    if (total > 0 && page * PAGE_SIZE >= total) {
+      setPage(0);
+    }
+  }, [total, page]);
 
   const referenceList = useMemo(() => {
     const normalized = query.trim().toLowerCase();
@@ -35,14 +70,10 @@ export default function SpecialAds() {
     return CURATED_VEHICLES.filter((v) => v.name.toLowerCase().includes(normalized));
   }, [query]);
 
-  const ads = adsPage?.items ?? [];
-  const total = adsPage?.total ?? 0;
-  const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
-
   return (
     <>
       <div className="flex h-[calc(100vh-170px)] min-h-0 gap-4 max-xl:flex-col">
-        <section className="glass-panel flex h-full min-h-0 w-80 shrink-0 flex-col overflow-hidden rounded-xl p-4 max-xl:h-64 max-xl:w-full">
+        <section className="glass-panel flex h-full min-h-0 w-72 shrink-0 flex-col overflow-hidden rounded-xl p-4 max-xl:h-64 max-xl:w-full">
           <div className="mb-1 flex items-center gap-2 text-xl font-black">
             <Sparkles className="text-cyan-200" />
             آگهی‌های خاص
@@ -80,91 +111,87 @@ export default function SpecialAds() {
         </section>
 
         <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col gap-3">
-          <section className="glass-panel flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl">
-            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 p-4">
-              <div>
-                <div className="font-black">آگهی‌های مدل‌های خاص</div>
-                <div className="mt-1 text-xs text-slate-400">
-                  {formatCount(ads.length)} از {formatCount(total)} آگهی
+          <div className="flex shrink-0 items-center justify-between gap-2">
+            <div className="flex h-10 shrink-0 overflow-hidden rounded-xl bg-white/10 text-sm font-black">
+              <button
+                onClick={() => {
+                  setDay("today");
+                  setPage(0);
+                }}
+                className={["h-full px-4 transition", day === "today" ? "bg-white text-slate-950" : "hover:bg-white/10"].join(" ")}
+              >
+                امروز
+              </button>
+              <button
+                onClick={() => {
+                  setDay("yesterday");
+                  setPage(0);
+                }}
+                className={["h-full px-4 transition", day === "yesterday" ? "bg-white text-slate-950" : "hover:bg-white/10"].join(" ")}
+              >
+                دیروز
+              </button>
+            </div>
+          </div>
+
+          <div className="flex min-h-0 flex-1 gap-0">
+            <section className="glass-panel flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-xl">
+              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 p-4">
+                <div>
+                  <div className="font-black">آگهی‌های مدل‌های خاص</div>
+                  <div className="mt-1 text-xs text-slate-400">
+                    {formatCount(ads.length)} از {formatCount(total)} آگهی
+                  </div>
                 </div>
               </div>
-              <div className="flex h-9 min-w-0 flex-1 items-center gap-2 rounded-lg border border-white/10 bg-slate-950/70 px-3 sm:max-w-64">
-                <Search size={14} className="shrink-0 text-slate-500" />
-                <input
-                  value={tableSearch}
-                  onChange={(event) => {
-                    setTableSearch(event.target.value);
-                    setPage(0);
-                  }}
-                  placeholder="جستجو در همین جدول..."
-                  className="min-w-0 flex-1 bg-transparent text-xs outline-none"
-                />
-              </div>
-              <div className="flex h-9 shrink-0 overflow-hidden rounded-lg bg-white/10 text-xs font-black">
-                <button
-                  onClick={() => {
-                    setDay("today");
-                    setPage(0);
-                  }}
-                  className={["h-full px-3 transition", day === "today" ? "bg-white text-slate-950" : "hover:bg-white/10"].join(" ")}
-                >
-                  امروز
-                </button>
-                <button
-                  onClick={() => {
-                    setDay("yesterday");
-                    setPage(0);
-                  }}
-                  className={["h-full px-3 transition", day === "yesterday" ? "bg-white text-slate-950" : "hover:bg-white/10"].join(" ")}
-                >
-                  دیروز
-                </button>
-              </div>
-            </div>
-            <div className="min-h-0 flex-1 overflow-auto scroll-area">
-              {isLoading ? (
-                <div className="grid h-full place-items-center text-slate-400">در حال بارگذاری...</div>
-              ) : ads.length === 0 ? (
-                <div className="grid h-full place-items-center text-slate-400">هنوز آگهی‌ای برای این مدل‌ها پیدا نشده</div>
-              ) : (
-                <table className="w-full min-w-[760px] text-sm">
-                  <thead className="sticky top-0 bg-slate-950 text-slate-400">
-                    <tr>
-                      <th className="border-b border-white/10 px-4 py-3 text-right">خودرو</th>
-                      <th className="border-b border-white/10 px-4 py-3 text-right">قیمت</th>
-                      <th className="border-b border-white/10 px-4 py-3 text-right">رنگ</th>
-                      <th className="border-b border-white/10 px-4 py-3 text-right">کانال</th>
-                      <th className="border-b border-white/10 px-4 py-3 text-right">تاریخ</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {ads.map((ad) => (
-                      <tr
-                        key={ad.id}
-                        onClick={() => setSelectedAdId(ad.id)}
-                        className="cursor-pointer transition hover:bg-white/5"
-                      >
-                        <td className="border-b border-white/10 px-4 py-3 font-bold">{ad.vehicle_name ?? "نامشخص"}</td>
-                        <td className="border-b border-white/10 px-4 py-3 font-black text-cyan-100">
-                          {ad.price_million ? `${formatNumber(ad.price_million)} میلیون` : "بدون قیمت"}
-                        </td>
-                        <td className="border-b border-white/10 px-4 py-3">{ad.color ?? "-"}</td>
-                        <td className="border-b border-white/10 px-4 py-3">
-                          {ad.channel_username ? `@${ad.channel_username}` : "-"}
-                        </td>
-                        <td className="border-b border-white/10 px-4 py-3 text-slate-300">
-                          <span className="flex items-center gap-1">
-                            {formatDateTime(ad.message_date)}
-                            <ExternalLink size={13} className="opacity-50" />
-                          </span>
-                        </td>
+              <div className="min-h-0 flex-1 overflow-auto scroll-area">
+                {isLoading ? (
+                  <div className="grid h-full place-items-center text-slate-400">در حال بارگذاری...</div>
+                ) : ads.length === 0 ? (
+                  <div className="grid h-full place-items-center text-slate-400">هنوز آگهی‌ای برای این مدل‌ها پیدا نشده</div>
+                ) : (
+                  <table className="w-full min-w-[760px] text-sm">
+                    <thead className="sticky top-0 bg-slate-950 text-slate-400">
+                      <tr>
+                        <th className="border-b border-white/10 px-4 py-3 text-right">خودرو</th>
+                        <th className="border-b border-white/10 px-4 py-3 text-right">قیمت</th>
+                        <th className="border-b border-white/10 px-4 py-3 text-right">رنگ</th>
+                        <th className="border-b border-white/10 px-4 py-3 text-right">کانال</th>
+                        <th className="border-b border-white/10 px-4 py-3 text-right">تاریخ</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
-            </div>
-          </section>
+                    </thead>
+                    <tbody>
+                      {ads.map((ad) => (
+                        <tr
+                          key={ad.id}
+                          onClick={() => setSelectedAdId(ad.id)}
+                          className="cursor-pointer transition hover:bg-white/5"
+                        >
+                          <td className="border-b border-white/10 px-4 py-3 font-bold">{ad.vehicle_name ?? "نامشخص"}</td>
+                          <td className="border-b border-white/10 px-4 py-3 font-black text-cyan-100">
+                            {ad.price_million ? `${formatNumber(ad.price_million)} میلیون` : "بدون قیمت"}
+                          </td>
+                          <td className="border-b border-white/10 px-4 py-3">{ad.color ?? "-"}</td>
+                          <td className="border-b border-white/10 px-4 py-3">
+                            {ad.channel_username ? `@${ad.channel_username}` : "-"}
+                          </td>
+                          <td className="border-b border-white/10 px-4 py-3 text-slate-300">
+                            <span className="flex items-center gap-1">
+                              {formatDateTime(ad.message_date)}
+                              <ExternalLink size={13} className="opacity-50" />
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            </section>
+            <FiltersDrawer>
+              <AdsFilters />
+            </FiltersDrawer>
+          </div>
 
           {pageCount > 1 && (
             <div className="glass-panel flex shrink-0 items-center justify-between gap-3 rounded-xl p-3">

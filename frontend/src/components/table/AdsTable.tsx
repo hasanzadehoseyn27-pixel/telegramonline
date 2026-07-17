@@ -1,6 +1,6 @@
 import { motion } from "framer-motion";
 import { ChevronLeft, ChevronRight, ExternalLink, Search } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useAds } from "../../hooks/useAds";
 import { useAdsStore } from "../../store/adsStore";
 import type { Ad } from "../../api/ads.api";
@@ -37,6 +37,15 @@ export default function AdsTable() {
   const total = data?.total ?? 0;
   const pageCount = Math.max(1, Math.ceil(total / pageSize));
   const currentPage = Math.floor(offset / pageSize) + 1;
+
+  // اگه بعد از سرچ/فیلتر جدید، صفحه‌ی فعلی دیگه در محدوده‌ی نتایج نباشه
+  // (مثلاً روی صفحه ۵ بودیم و نتایج جدید فقط ۲ صفحه شدن)، برگرد صفحه‌ی اول
+  // به‌جای ماندن روی یک صفحه‌ی خالی با نوار صفحه‌بندی گمشده.
+  useEffect(() => {
+    if (total > 0 && offset >= total) {
+      setFilters({ offset: 0 });
+    }
+  }, [total, offset, setFilters]);
 
   if (isLoading) {
     return (

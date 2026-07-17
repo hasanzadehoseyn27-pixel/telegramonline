@@ -1,5 +1,6 @@
 import { Bell, Car, ShoppingBag, Wrench } from "lucide-react";
 import AdsFilters from "../components/filters/AdsFilters";
+import FiltersDrawer from "../components/filters/FiltersDrawer";
 import AdsTable from "../components/table/AdsTable";
 import { useAdsStore, type AdsTab } from "../store/adsStore";
 
@@ -53,13 +54,13 @@ export default function Ads() {
         </div>
       </div>
 
-      <div className="grid min-h-0 grid-cols-[minmax(0,1fr)_300px] gap-4 max-xl:grid-cols-1">
-        <div className="min-h-0 min-w-0">
+      <div className="flex min-h-0 gap-0 max-xl:flex-col">
+        <div className="min-h-0 min-w-0 flex-1">
           <AdsTable />
         </div>
-        <div className="min-h-0 max-xl:hidden">
+        <FiltersDrawer>
           <AdsFilters />
-        </div>
+        </FiltersDrawer>
       </div>
     </div>
   );

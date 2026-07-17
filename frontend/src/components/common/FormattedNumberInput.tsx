@@ -25,9 +25,12 @@ export default function FormattedNumberInput({
         placeholder={placeholder}
         className="mt-2 h-11 w-full rounded-lg border border-white/10 bg-slate-950/70 px-3 text-sm text-white outline-none transition focus:border-cyan-300/60 focus:ring-2 focus:ring-cyan-300/10"
       />
-      <span className="mt-1 block min-h-5 text-xs text-cyan-100/70">
-        {value ? `${numberToPersianWords(value)}${suffix ? ` ${suffix}` : ""}` : " "}
-      </span>
+      {value ? (
+        <span className="mt-1 block text-xs text-cyan-100/70">
+          {numberToPersianWords(value)}
+          {suffix ? ` ${suffix}` : ""}
+        </span>
+      ) : null}
     </label>
   );
 }
