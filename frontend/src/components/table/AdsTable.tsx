@@ -104,7 +104,7 @@ export default function AdsTable() {
           </div>
         </div>
 
-        <div className="hidden min-h-0 flex-1 overflow-auto scroll-area lg:block">
+        <div className="min-h-0 flex-1 overflow-auto scroll-area">
           <table className="w-full min-w-[760px] border-separate border-spacing-0 text-sm">
             <thead className="sticky top-0 z-10 bg-slate-950/95 backdrop-blur">
               <tr className="text-slate-400">
@@ -171,72 +171,6 @@ export default function AdsTable() {
               )}
             </tbody>
           </table>
-        </div>
-
-        <div className="min-h-0 flex-1 overflow-y-auto p-3 scroll-area lg:hidden">
-          {ads.length === 0 ? (
-            <div className="grid h-full place-items-center text-center text-sm text-slate-400">
-              آگهی مطابق فیلترها پیدا نشد
-            </div>
-          ) : (
-            <div className="grid gap-3">
-              {ads.map((ad, index) => {
-                const link = ad.telegram_link ?? telegramLink(ad.channel_username, ad.source_message_id);
-                return (
-                  <motion.button
-                    key={ad.id}
-                    type="button"
-                    initial={{ opacity: 0, y: 8 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: Math.min(index * 0.02, 0.24) }}
-                    onClick={() => setSelectedAdId(ad.id)}
-                    className="w-full overflow-hidden rounded-2xl border border-white/10 bg-white/[0.07] p-3 text-right"
-                  >
-                    <div className="flex min-w-0 items-start justify-between gap-2">
-                      <div className="min-w-0 flex-1">
-                        <div className="truncate text-base font-black">{ad.vehicle_name ?? "نامشخص"}</div>
-                        <div className="mt-1 truncate text-xs text-slate-400">
-                          {ad.color ?? "-"} · {ad.year ?? "-"} · {formatDateTime(ad.message_date)}
-                        </div>
-                      </div>
-                      <div className="shrink-0 whitespace-nowrap rounded-xl bg-cyan-300/15 px-2.5 py-2 text-xs font-black text-cyan-100 sm:px-3 sm:text-sm">
-                        {ad.price_million ? `${formatNumber(ad.price_million)} میلیون` : "بدون قیمت"}
-                      </div>
-                    </div>
-
-                    <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-slate-300">
-                      <div className="rounded-xl bg-slate-950/60 p-2">
-                        کارکرد
-                        <div className="mt-1 font-bold text-white">
-                          {ad.mileage_km ? `${formatNumber(ad.mileage_km)} km` : "-"}
-                        </div>
-                      </div>
-                      <div className="rounded-xl bg-slate-950/60 p-2">
-                        تلفن
-                        <div className="mt-1 truncate font-bold text-white">{ad.phone ?? "-"}</div>
-                      </div>
-                    </div>
-
-                    <div className="mt-3 flex items-center justify-between gap-2 text-xs text-slate-400">
-                      <span className="truncate">{ad.channel_username ? `@${ad.channel_username}` : "-"}</span>
-                      {link && (
-                        <a
-                          href={link}
-                          target="_blank"
-                          rel="noreferrer"
-                          onClick={(event) => event.stopPropagation()}
-                          className="inline-flex items-center gap-1 rounded-full bg-white/10 px-2 py-1 text-cyan-100"
-                        >
-                          تلگرام
-                          <ExternalLink size={12} />
-                        </a>
-                      )}
-                    </div>
-                  </motion.button>
-                );
-              })}
-            </div>
-          )}
         </div>
       </div>
 

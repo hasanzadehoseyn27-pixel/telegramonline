@@ -19,7 +19,7 @@ export default function Ads() {
   return (
     <div className="grid h-[calc(100vh-170px)] max-sm:h-[calc(100vh-250px)] min-h-0 grid-rows-[auto_minmax(0,1fr)] gap-4">
       <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
-        <div className="flex min-w-0 flex-wrap gap-2">
+        <div className="flex min-w-0 flex-wrap gap-2 max-sm:hidden">
           {tabButtons.map((item) => {
             const Icon = item.icon;
             return (
@@ -38,6 +38,10 @@ export default function Ads() {
           })}
         </div>
 
+        <div className="flex h-10 shrink-0 items-center rounded-xl bg-white/5 px-3 text-xs font-black text-cyan-100 sm:hidden">
+          {tabButtons.find((t) => t.tab === activeTab)?.title}
+        </div>
+
         <FiltersToggleButton open={filtersOpen} onClick={() => setFiltersOpen((v) => !v)} />
       </div>
 
@@ -46,7 +50,7 @@ export default function Ads() {
           <AdsTable />
         </div>
         <FiltersDrawer open={filtersOpen} onClose={() => setFiltersOpen(false)}>
-          <AdsFilters />
+          <AdsFilters showStatusTabs />
         </FiltersDrawer>
       </div>
     </div>

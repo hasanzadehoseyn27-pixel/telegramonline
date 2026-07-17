@@ -1,16 +1,23 @@
-import { Search, SlidersHorizontal, X } from "lucide-react";
+import { Bell, Car, Search, ShoppingBag, SlidersHorizontal, Wrench, X } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { getFilterOptions } from "../../api/filters.api";
-import { useAdsStore } from "../../store/adsStore";
+import { useAdsStore, type AdsTab } from "../../store/adsStore";
 import FormattedNumberInput from "../common/FormattedNumberInput";
 import { formatNumber } from "../../utils/format";
 
 const ranges = [1, 3, 6, 12, 24];
 
-export default function AdsFilters() {
+const statusTabs: { tab: AdsTab; title: string; icon: typeof Car }[] = [
+  { tab: "priced", title: "قیمت‌دار", icon: Car },
+  { tab: "unpriced", title: "بدون قیمت", icon: Bell },
+  { tab: "used", title: "کارکرده", icon: Wrench },
+  { tab: "buyers", title: "خریدارم", icon: ShoppingBag },
+];
+
+export default function AdsFilters({ showStatusTabs = false }: { showStatusTabs?: boolean }) {
   const [vehicleSearch, setVehicleSearch] = useState("");
-  const { filters, setFilters, resetFilters, toggleVehicle } = useAdsStore();
+  const { activeTab, setTab, filters, setFilters, resetFilters, toggleVehicle } = useAdsStore();
   const { data } = useQuery({
     queryKey: ["filters", "options"],
     queryFn: getFilterOptions,
@@ -43,6 +50,27 @@ export default function AdsFilters() {
           پاک کردن
         </button>
       </div>
+
+      {showStatusTabs && (
+        <div className="mb-3 grid grid-cols-2 gap-2 sm:hidden">
+          {statusTabs.map((item) => {
+            const Icon = item.icon;
+            return (
+              <button
+                key={item.tab}
+                onClick={() => setTab(item.tab)}
+                className={[
+                  "flex h-10 items-center justify-center gap-2 rounded-xl text-xs font-black transition",
+                  activeTab === item.tab ? "bg-white text-slate-950" : "bg-white/10 hover:bg-white/20",
+                ].join(" ")}
+              >
+                <Icon size={15} />
+                {item.title}
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       <div className="space-y-2.5 overflow-y-auto pl-1 scroll-area">
         <div>
