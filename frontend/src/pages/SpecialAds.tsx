@@ -179,12 +179,12 @@ export default function SpecialAds() {
           </div>
 
           {pageCount > 1 && (
-            <div className="glass-panel flex shrink-0 items-center justify-between gap-3 rounded-xl p-3">
+            <div className="glass-panel flex shrink-0 flex-wrap items-center justify-center gap-2 rounded-xl p-2.5 sm:justify-between sm:gap-3 sm:p-3">
               <button
                 type="button"
                 onClick={() => setPage((p) => Math.max(0, p - 1))}
                 disabled={page === 0}
-                className="flex items-center gap-1 rounded-xl bg-white/10 px-3 py-2 text-sm font-bold transition hover:bg-white hover:text-slate-950 disabled:opacity-40 disabled:hover:bg-white/10 disabled:hover:text-inherit"
+                className="flex shrink-0 items-center gap-1 rounded-xl bg-white/10 px-2.5 py-2 text-xs font-bold transition sm:px-3 sm:text-sm hover:bg-white hover:text-slate-950 disabled:opacity-40 disabled:hover:bg-white/10 disabled:hover:text-inherit"
               >
                 <ChevronRight size={16} />
                 قبلی
@@ -196,7 +196,7 @@ export default function SpecialAds() {
                 type="button"
                 onClick={() => setPage((p) => Math.min(pageCount - 1, p + 1))}
                 disabled={page >= pageCount - 1}
-                className="flex items-center gap-1 rounded-xl bg-white/10 px-3 py-2 text-sm font-bold transition hover:bg-white hover:text-slate-950 disabled:opacity-40 disabled:hover:bg-white/10 disabled:hover:text-inherit"
+                className="flex shrink-0 items-center gap-1 rounded-xl bg-white/10 px-2.5 py-2 text-xs font-bold transition sm:px-3 sm:text-sm hover:bg-white hover:text-slate-950 disabled:opacity-40 disabled:hover:bg-white/10 disabled:hover:text-inherit"
               >
                 بعدی
                 <ChevronLeft size={16} />

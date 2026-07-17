@@ -190,16 +190,16 @@ export default function AdsTable() {
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: Math.min(index * 0.02, 0.24) }}
                     onClick={() => setSelectedAdId(ad.id)}
-                    className="w-full rounded-2xl border border-white/10 bg-white/[0.07] p-3 text-right"
+                    className="w-full overflow-hidden rounded-2xl border border-white/10 bg-white/[0.07] p-3 text-right"
                   >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
+                    <div className="flex min-w-0 items-start justify-between gap-2">
+                      <div className="min-w-0 flex-1">
                         <div className="truncate text-base font-black">{ad.vehicle_name ?? "نامشخص"}</div>
-                        <div className="mt-1 text-xs text-slate-400">
+                        <div className="mt-1 truncate text-xs text-slate-400">
                           {ad.color ?? "-"} · {ad.year ?? "-"} · {formatDateTime(ad.message_date)}
                         </div>
                       </div>
-                      <div className="shrink-0 rounded-xl bg-cyan-300/15 px-3 py-2 text-sm font-black text-cyan-100">
+                      <div className="shrink-0 whitespace-nowrap rounded-xl bg-cyan-300/15 px-2.5 py-2 text-xs font-black text-cyan-100 sm:px-3 sm:text-sm">
                         {ad.price_million ? `${formatNumber(ad.price_million)} میلیون` : "بدون قیمت"}
                       </div>
                     </div>
@@ -241,12 +241,12 @@ export default function AdsTable() {
       </div>
 
       {pageCount > 1 && (
-        <div className="glass-panel flex shrink-0 items-center justify-between gap-3 rounded-xl p-3">
+        <div className="glass-panel flex shrink-0 flex-wrap items-center justify-center gap-2 rounded-xl p-2.5 sm:justify-between sm:gap-3 sm:p-3">
           <button
             type="button"
             onClick={() => setFilters({ offset: Math.max(0, offset - pageSize) })}
             disabled={currentPage <= 1}
-            className="flex items-center gap-1 rounded-xl bg-white/10 px-3 py-2 text-sm font-bold transition hover:bg-white hover:text-slate-950 disabled:opacity-40 disabled:hover:bg-white/10 disabled:hover:text-inherit"
+            className="flex shrink-0 items-center gap-1 rounded-xl bg-white/10 px-2.5 py-2 text-xs font-bold transition sm:px-3 sm:text-sm hover:bg-white hover:text-slate-950 disabled:opacity-40 disabled:hover:bg-white/10 disabled:hover:text-inherit"
           >
             <ChevronRight size={16} />
             قبلی
@@ -258,7 +258,7 @@ export default function AdsTable() {
             type="button"
             onClick={() => setFilters({ offset: Math.min((pageCount - 1) * pageSize, offset + pageSize) })}
             disabled={currentPage >= pageCount}
-            className="flex items-center gap-1 rounded-xl bg-white/10 px-3 py-2 text-sm font-bold transition hover:bg-white hover:text-slate-950 disabled:opacity-40 disabled:hover:bg-white/10 disabled:hover:text-inherit"
+            className="flex shrink-0 items-center gap-1 rounded-xl bg-white/10 px-2.5 py-2 text-xs font-bold transition sm:px-3 sm:text-sm hover:bg-white hover:text-slate-950 disabled:opacity-40 disabled:hover:bg-white/10 disabled:hover:text-inherit"
           >
             بعدی
             <ChevronLeft size={16} />
