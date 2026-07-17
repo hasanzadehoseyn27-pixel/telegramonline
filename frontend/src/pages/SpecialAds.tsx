@@ -109,7 +109,7 @@ export default function SpecialAds() {
         </section>
 
         <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col gap-3">
-          <div className="flex min-h-0 flex-1 gap-0">
+          <div className="flex min-h-0 min-w-0 flex-1 gap-0">
             <section className="glass-panel flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-xl">
               <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 p-4">
                 <div>
@@ -129,7 +129,7 @@ export default function SpecialAds() {
                 </div>
                 <FiltersToggleButton open={filtersOpen} onClick={() => setFiltersOpen((v) => !v)} />
               </div>
-              <div className="min-h-0 flex-1 overflow-auto scroll-area">
+              <div className="min-h-0 min-w-0 flex-1 overflow-auto scroll-area">
                 {isLoading ? (
                   <div className="grid h-full place-items-center text-slate-400">در حال بارگذاری...</div>
                 ) : ads.length === 0 ? (

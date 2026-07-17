@@ -67,8 +67,8 @@ export default function AdsTable() {
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col gap-3">
-      <div className="glass-panel flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl">
+    <div className="flex h-full min-h-0 min-w-0 flex-col gap-3">
+      <div className="glass-panel flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-xl">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 px-3 py-3 sm:px-4">
           <div>
             <div className="text-sm font-black">جدول آگهی‌های امروز</div>
@@ -104,7 +104,7 @@ export default function AdsTable() {
           </div>
         </div>
 
-        <div className="min-h-0 flex-1 overflow-auto scroll-area">
+        <div className="min-h-0 min-w-0 flex-1 overflow-auto scroll-area">
           <table className="w-full min-w-[760px] border-separate border-spacing-0 text-sm">
             <thead className="sticky top-0 z-10 bg-slate-950/95 backdrop-blur">
               <tr className="text-slate-400">
