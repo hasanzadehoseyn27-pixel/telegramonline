@@ -41,7 +41,7 @@ export default function SpecialAds() {
 
   return (
     <>
-      <div className="flex h-full min-h-0 gap-4 max-xl:flex-col">
+      <div className="flex h-[calc(100vh-170px)] min-h-0 gap-4 max-xl:flex-col">
         <section className="glass-panel flex h-full min-h-0 w-80 shrink-0 flex-col overflow-hidden rounded-xl p-4 max-xl:h-64 max-xl:w-full">
           <div className="mb-1 flex items-center gap-2 text-xl font-black">
             <Sparkles className="text-cyan-200" />
