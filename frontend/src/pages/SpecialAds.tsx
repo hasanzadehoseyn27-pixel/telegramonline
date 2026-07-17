@@ -138,11 +138,11 @@ export default function SpecialAds() {
                   <table className="w-full min-w-[760px] text-sm">
                     <thead className="sticky top-0 bg-slate-950 text-slate-400">
                       <tr>
-                        <th className="border-b border-white/10 px-4 py-3 text-right">خودرو</th>
-                        <th className="border-b border-white/10 px-4 py-3 text-right">قیمت</th>
-                        <th className="border-b border-white/10 px-4 py-3 text-right">رنگ</th>
-                        <th className="border-b border-white/10 px-4 py-3 text-right">کانال</th>
-                        <th className="border-b border-white/10 px-4 py-3 text-right">تاریخ</th>
+                        <th className="whitespace-nowrap border-b border-white/10 px-4 py-3 text-right">خودرو</th>
+                        <th className="whitespace-nowrap border-b border-white/10 px-4 py-3 text-right">قیمت</th>
+                        <th className="whitespace-nowrap border-b border-white/10 px-4 py-3 text-right">رنگ</th>
+                        <th className="whitespace-nowrap border-b border-white/10 px-4 py-3 text-right">کانال</th>
+                        <th className="whitespace-nowrap border-b border-white/10 px-4 py-3 text-right">تاریخ</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -152,15 +152,15 @@ export default function SpecialAds() {
                           onClick={() => setSelectedAdId(ad.id)}
                           className="cursor-pointer transition hover:bg-white/5"
                         >
-                          <td className="border-b border-white/10 px-4 py-3 font-bold">{ad.vehicle_name ?? "نامشخص"}</td>
-                          <td className="border-b border-white/10 px-4 py-3 font-black text-cyan-100">
+                          <td className="whitespace-nowrap border-b border-white/10 px-4 py-3 font-bold">{ad.vehicle_name ?? "نامشخص"}</td>
+                          <td className="whitespace-nowrap border-b border-white/10 px-4 py-3 font-black text-cyan-100">
                             {ad.price_million ? `${formatNumber(ad.price_million)} میلیون` : "بدون قیمت"}
                           </td>
-                          <td className="border-b border-white/10 px-4 py-3">{ad.color ?? "-"}</td>
-                          <td className="border-b border-white/10 px-4 py-3">
+                          <td className="whitespace-nowrap border-b border-white/10 px-4 py-3">{ad.color ?? "-"}</td>
+                          <td className="whitespace-nowrap border-b border-white/10 px-4 py-3">
                             {ad.channel_username ? `@${ad.channel_username}` : "-"}
                           </td>
-                          <td className="border-b border-white/10 px-4 py-3 text-slate-300">
+                          <td className="whitespace-nowrap border-b border-white/10 px-4 py-3 text-slate-300">
                             <span className="flex items-center gap-1">
                               {formatDateTime(ad.message_date)}
                               <ExternalLink size={13} className="opacity-50" />

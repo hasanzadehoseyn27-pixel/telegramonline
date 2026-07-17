@@ -104,12 +104,12 @@ export default function AdsTable() {
           </div>
         </div>
 
-        <div className="hidden min-h-0 flex-1 overflow-auto scroll-area md:block">
+        <div className="hidden min-h-0 flex-1 overflow-auto scroll-area lg:block">
           <table className="w-full min-w-[760px] border-separate border-spacing-0 text-sm">
             <thead className="sticky top-0 z-10 bg-slate-950/95 backdrop-blur">
               <tr className="text-slate-400">
                 {headers.map((header) => (
-                  <th key={header} className="border-b border-white/10 px-4 py-3 text-right font-bold">
+                  <th key={header} className="whitespace-nowrap border-b border-white/10 px-4 py-3 text-right font-bold">
                     {header}
                   </th>
                 ))}
@@ -134,19 +134,19 @@ export default function AdsTable() {
                       onClick={() => setSelectedAdId(ad.id)}
                       className="cursor-pointer border-b border-white/10 transition hover:bg-white/[0.07]"
                     >
-                      <td className="border-b border-white/10 px-4 py-3 font-bold text-white">
+                      <td className="whitespace-nowrap border-b border-white/10 px-4 py-3 font-bold text-white">
                         {ad.vehicle_name ?? "نامشخص"}
                       </td>
-                      <td className="border-b border-white/10 px-4 py-3 font-black text-cyan-200">
+                      <td className="whitespace-nowrap border-b border-white/10 px-4 py-3 font-black text-cyan-200">
                         {ad.price_million ? `${formatNumber(ad.price_million)} میلیون` : "بدون قیمت"}
                       </td>
-                      <td className="border-b border-white/10 px-4 py-3 text-slate-200">{ad.year ?? "-"}</td>
-                      <td className="border-b border-white/10 px-4 py-3 text-slate-200">{ad.color ?? "-"}</td>
-                      <td className="border-b border-white/10 px-4 py-3 text-slate-200">
+                      <td className="whitespace-nowrap border-b border-white/10 px-4 py-3 text-slate-200">{ad.year ?? "-"}</td>
+                      <td className="whitespace-nowrap border-b border-white/10 px-4 py-3 text-slate-200">{ad.color ?? "-"}</td>
+                      <td className="whitespace-nowrap border-b border-white/10 px-4 py-3 text-slate-200">
                         {ad.mileage_km ? `${formatNumber(ad.mileage_km)} km` : "-"}
                       </td>
-                      <td className="border-b border-white/10 px-4 py-3 text-slate-200">{ad.phone ?? "-"}</td>
-                      <td className="border-b border-white/10 px-4 py-3">
+                      <td className="whitespace-nowrap border-b border-white/10 px-4 py-3 text-slate-200">{ad.phone ?? "-"}</td>
+                      <td className="whitespace-nowrap border-b border-white/10 px-4 py-3">
                         {link ? (
                           <a
                             href={link}
@@ -162,7 +162,7 @@ export default function AdsTable() {
                           "-"
                         )}
                       </td>
-                      <td className="border-b border-white/10 px-4 py-3 text-slate-300">
+                      <td className="whitespace-nowrap border-b border-white/10 px-4 py-3 text-slate-300">
                         {formatDateTime(ad.message_date)}
                       </td>
                     </motion.tr>
@@ -173,7 +173,7 @@ export default function AdsTable() {
           </table>
         </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto p-3 scroll-area md:hidden">
+        <div className="min-h-0 flex-1 overflow-y-auto p-3 scroll-area lg:hidden">
           {ads.length === 0 ? (
             <div className="grid h-full place-items-center text-center text-sm text-slate-400">
               آگهی مطابق فیلترها پیدا نشد
