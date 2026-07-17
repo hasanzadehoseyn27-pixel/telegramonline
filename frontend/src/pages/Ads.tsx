@@ -17,7 +17,10 @@ export default function Ads() {
   const [filtersOpen, setFiltersOpen] = useState(false);
 
   return (
-    <div className="grid h-[calc(100vh-170px)] max-sm:h-[calc(100vh-250px)] min-h-0 grid-rows-[auto_minmax(0,1fr)] gap-4">
+    <div
+      className="grid h-[calc(100vh-170px)] max-sm:h-[calc(100vh-250px)] min-h-0 w-full max-w-full grid-rows-[auto_minmax(0,1fr)] gap-4"
+      style={{ width: "100%", maxWidth: "100%" }}
+    >
       <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
         <div className="flex min-w-0 flex-wrap gap-2 max-sm:hidden">
           {tabButtons.map((item) => {
@@ -45,7 +48,7 @@ export default function Ads() {
         <FiltersToggleButton open={filtersOpen} onClick={() => setFiltersOpen((v) => !v)} />
       </div>
 
-      <div className="flex min-h-0 gap-0 max-xl:flex-col">
+      <div className="flex min-h-0 min-w-0 gap-0 max-xl:flex-col">
         <div className="min-h-0 min-w-0 flex-1">
           <AdsTable />
         </div>
