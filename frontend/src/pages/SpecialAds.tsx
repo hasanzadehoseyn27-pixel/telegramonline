@@ -5,7 +5,7 @@ import { getPricedAds, type Ad } from "../api/ads.api";
 import { CURATED_VEHICLES } from "../data/curatedVehicles";
 import AdDetailModal from "../components/modal/AdDetailModal";
 import AdsFilters from "../components/filters/AdsFilters";
-import FiltersDrawer from "../components/filters/FiltersDrawer";
+import FiltersDrawer, { FiltersToggleButton } from "../components/filters/FiltersDrawer";
 import { useAdsStore } from "../store/adsStore";
 import { formatCount, formatDateTime, formatNumber } from "../utils/format";
 
@@ -21,13 +21,12 @@ function isInsideTimeRange(ad: Ad, hours?: number) {
 
 export default function SpecialAds() {
   const [query, setQuery] = useState("");
-  const [day, setDay] = useState<"today" | "yesterday">("today");
   const [page, setPage] = useState(0);
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [selectedAdId, setSelectedAdId] = useState<number>();
-  const { filters } = useAdsStore();
+  const { filters, setFilters } = useAdsStore();
+  const day = filters.day ?? "today";
 
-  // اگه کاربر از فیلترها چند مدل خاص رو تیک زده، فقط همون‌ها (که باید عضو
-  // لیست تضمین‌شده هم باشن)؛ وگرنه همه‌ی لیست تضمین‌شده.
   const effectiveVehicleKeys = useMemo(() => {
     if (!filters.vehicleKeys?.length) return ALL_KEYS;
     const narrowed = filters.vehicleKeys.filter((k) => ALL_KEYS.includes(k));
@@ -57,7 +56,6 @@ export default function SpecialAds() {
   const total = adsPage?.total ?? 0;
   const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
-  // بعد از تغییر فیلتر/سرچ، اگه صفحه‌ی فعلی دیگه در محدوده نباشه برگرد صفحه‌ی اول
   useEffect(() => {
     if (total > 0 && page * PAGE_SIZE >= total) {
       setPage(0);
@@ -111,29 +109,6 @@ export default function SpecialAds() {
         </section>
 
         <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col gap-3">
-          <div className="flex shrink-0 items-center justify-between gap-2">
-            <div className="flex h-10 shrink-0 overflow-hidden rounded-xl bg-white/10 text-sm font-black">
-              <button
-                onClick={() => {
-                  setDay("today");
-                  setPage(0);
-                }}
-                className={["h-full px-4 transition", day === "today" ? "bg-white text-slate-950" : "hover:bg-white/10"].join(" ")}
-              >
-                امروز
-              </button>
-              <button
-                onClick={() => {
-                  setDay("yesterday");
-                  setPage(0);
-                }}
-                className={["h-full px-4 transition", day === "yesterday" ? "bg-white text-slate-950" : "hover:bg-white/10"].join(" ")}
-              >
-                دیروز
-              </button>
-            </div>
-          </div>
-
           <div className="flex min-h-0 flex-1 gap-0">
             <section className="glass-panel flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-xl">
               <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 p-4">
@@ -143,6 +118,16 @@ export default function SpecialAds() {
                     {formatCount(ads.length)} از {formatCount(total)} آگهی
                   </div>
                 </div>
+                <div className="flex h-9 min-w-0 flex-1 items-center gap-2 rounded-lg border border-white/10 bg-slate-950/70 px-3 sm:max-w-64">
+                  <Search size={14} className="shrink-0 text-slate-500" />
+                  <input
+                    value={filters.search ?? ""}
+                    onChange={(event) => setFilters({ search: event.target.value })}
+                    placeholder="جستجو در همین جدول..."
+                    className="min-w-0 flex-1 bg-transparent text-xs outline-none"
+                  />
+                </div>
+                <FiltersToggleButton open={filtersOpen} onClick={() => setFiltersOpen((v) => !v)} />
               </div>
               <div className="min-h-0 flex-1 overflow-auto scroll-area">
                 {isLoading ? (
@@ -188,7 +173,7 @@ export default function SpecialAds() {
                 )}
               </div>
             </section>
-            <FiltersDrawer>
+            <FiltersDrawer open={filtersOpen}>
               <AdsFilters />
             </FiltersDrawer>
           </div>

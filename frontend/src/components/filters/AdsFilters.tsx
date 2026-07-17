@@ -45,6 +45,30 @@ export default function AdsFilters() {
       </div>
 
       <div className="space-y-2.5 overflow-y-auto pl-1 scroll-area">
+        <div>
+          <span className="text-xs font-semibold text-slate-400">بازه‌ی روز</span>
+          <div className="mt-2 flex h-10 overflow-hidden rounded-lg bg-slate-950/70 text-sm font-black">
+            <button
+              onClick={() => setFilters({ day: "today" })}
+              className={[
+                "h-full flex-1 transition",
+                (filters.day ?? "today") === "today" ? "bg-cyan-300 text-slate-950" : "text-slate-300 hover:bg-white/10",
+              ].join(" ")}
+            >
+              امروز
+            </button>
+            <button
+              onClick={() => setFilters({ day: "yesterday" })}
+              className={[
+                "h-full flex-1 transition",
+                filters.day === "yesterday" ? "bg-cyan-300 text-slate-950" : "text-slate-300 hover:bg-white/10",
+              ].join(" ")}
+            >
+              دیروز
+            </button>
+          </div>
+        </div>
+
         <label className="block">
           <span className="text-xs font-semibold text-slate-400">جستجو</span>
           <div className="mt-2 flex h-11 items-center gap-2 rounded-lg border border-white/10 bg-slate-950/70 px-3">

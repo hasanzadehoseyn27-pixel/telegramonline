@@ -1,6 +1,7 @@
 import { Bell, Car, ShoppingBag, Wrench } from "lucide-react";
+import { useState } from "react";
 import AdsFilters from "../components/filters/AdsFilters";
-import FiltersDrawer from "../components/filters/FiltersDrawer";
+import FiltersDrawer, { FiltersToggleButton } from "../components/filters/FiltersDrawer";
 import AdsTable from "../components/table/AdsTable";
 import { useAdsStore, type AdsTab } from "../store/adsStore";
 
@@ -12,8 +13,8 @@ const tabButtons: { tab: AdsTab; title: string; icon: typeof Car }[] = [
 ];
 
 export default function Ads() {
-  const { activeTab, setTab, filters, setFilters } = useAdsStore();
-  const day = filters.day ?? "today";
+  const { activeTab, setTab } = useAdsStore();
+  const [filtersOpen, setFiltersOpen] = useState(false);
 
   return (
     <div className="grid h-[calc(100vh-170px)] min-h-0 grid-rows-[auto_minmax(0,1fr)] gap-4">
@@ -37,28 +38,14 @@ export default function Ads() {
           })}
         </div>
 
-        {/* موقتی: برای دیدن پیام‌های دیروز بعد از پاک‌سازی نیمه‌شب */}
-        <div className="flex h-10 shrink-0 overflow-hidden rounded-xl bg-white/10 text-sm font-black">
-          <button
-            onClick={() => setFilters({ day: "today" })}
-            className={["h-full px-4 transition", day === "today" ? "bg-white text-slate-950" : "hover:bg-white/10"].join(" ")}
-          >
-            امروز
-          </button>
-          <button
-            onClick={() => setFilters({ day: "yesterday" })}
-            className={["h-full px-4 transition", day === "yesterday" ? "bg-white text-slate-950" : "hover:bg-white/10"].join(" ")}
-          >
-            دیروز
-          </button>
-        </div>
+        <FiltersToggleButton open={filtersOpen} onClick={() => setFiltersOpen((v) => !v)} />
       </div>
 
       <div className="flex min-h-0 gap-0 max-xl:flex-col">
         <div className="min-h-0 min-w-0 flex-1">
           <AdsTable />
         </div>
-        <FiltersDrawer>
+        <FiltersDrawer open={filtersOpen}>
           <AdsFilters />
         </FiltersDrawer>
       </div>
