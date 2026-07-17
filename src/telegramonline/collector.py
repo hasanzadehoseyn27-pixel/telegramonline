@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import time
+import traceback
 from datetime import datetime, timedelta, timezone
 
 from telethon import TelegramClient, events
@@ -410,81 +411,96 @@ async def live_collect() -> None:
 
     @client.on(events.NewMessage)
     async def handler(event) -> None:
-        chat = await event.get_chat()
-        username = getattr(chat, "username", None)
-        if username and username in known_groups:
-            await discover_forwarded_channel_from_group(
-                client,
-                conn,
-                known,
-                username,
-                event.message,
-            )
-            return
-        if not username or username not in known:
-            return
-        if not event.message.message:
-            return
-        channel = get_channel_by_username(conn, username)
-        if channel is None or not channel["active"]:
-            return
-        ads = parse_message_group(str(event.message.id), event.message.message, event.message.date, source="live")
-        saved_ads = save_ads(conn, ads, channel_id=channel["id"], channel_username=username)
-
-        triggered_alerts = check_price_alerts(
-            conn,
-            saved_ads,
-        )
-
-        for ad in saved_ads:
-            await broadcast_new_ad(
-                {
-                    "id": ad["id"],
-                    "vehicle_key": ad["vehicle_key"],
-                    "vehicle_name": ad["vehicle_name"],
-                    "price_million": ad["price_million"],
-                    "year": ad["year"],
-                    "color": ad["color"],
-                    "phone": ad["phone"],
-                }
-            )
-
-        for alert_ad in triggered_alerts:
-            await broadcast_price_alert(
-                {
-                    "vehicle_key": alert_ad["vehicle_key"],
-                    "vehicle_name": alert_ad["vehicle_name"],
-                    "price_million": alert_ad["price_million"],
-                }
-            )
-
-
-        for ad in saved_ads:
-
-            if (
-                ad["vehicle_key"]
-                and ad["price_million"]
-            ):
-
-                price_event = check_price_change(
-                    ad["vehicle_key"],
-                    ad["price_million"],
-                )
-
-                if price_event:
-                    await broadcast_price_update(
-                        price_event
-                    )
-
-        for ad in ads:
-            if ad.status == "sale" and ad.vehicle_name and ad.price_million:
-                print(f"[{username}] {ad.vehicle_name}: {ad.price_million} million | confidence={ad.confidence}")
+        # توجه مهم: Telethon اگه توی handler یه پیام خاص خطا بدهد، اون خطا
+        # را کاملاً بی‌صدا می‌بلعد (نه کرش می‌کند، نه چاپ می‌کند) — یعنی اگر
+        # try/except نداشته باشیم، ممکنه یک پیام مشکل‌دار باعث شود کل
+        # collector ساکت بماند بدون هیچ نشونه‌ای در ترمینال. برای همینه که
+        # کل بدنه را توی try/except می‌گذاریم و هر خطا را با traceback کامل
+        # چاپ می‌کنیم، تا اگه دوباره پیش بیاد بلافاصله دیده شود.
+        try:
+            await _handle_new_message(event, client, conn, known, known_groups)
+        except Exception:  # noqa: BLE001
+            print("❌ خطای غیرمنتظره در پردازش یک پیام زنده:", flush=True)
+            traceback.print_exc()
+            try:
+                conn.rollback()
+            except Exception:  # noqa: BLE001
+                pass
 
     asyncio.create_task(channel_sync_loop(client, conn, known))
     asyncio.create_task(source_group_sync_loop(client, conn, known_groups))
     asyncio.create_task(midnight_purge_loop(conn))
     print("telegramonline collector is running.")
     await client.run_until_disconnected()
+
+
+async def _handle_new_message(event, client, conn, known: set[str], known_groups: set[str]) -> None:
+    chat = await event.get_chat()
+    username = getattr(chat, "username", None)
+    if username and username in known_groups:
+        await discover_forwarded_channel_from_group(
+            client,
+            conn,
+            known,
+            username,
+            event.message,
+        )
+        return
+    if not username or username not in known:
+        return
+    if not event.message.message:
+        return
+    channel = get_channel_by_username(conn, username)
+    if channel is None or not channel["active"]:
+        return
+    ads = parse_message_group(str(event.message.id), event.message.message, event.message.date, source="live")
+    saved_ads = save_ads(conn, ads, channel_id=channel["id"], channel_username=username)
+
+    triggered_alerts = check_price_alerts(
+        conn,
+        saved_ads,
+    )
+
+    for ad in saved_ads:
+        await broadcast_new_ad(
+            {
+                "id": ad["id"],
+                "vehicle_key": ad["vehicle_key"],
+                "vehicle_name": ad["vehicle_name"],
+                "price_million": ad["price_million"],
+                "year": ad["year"],
+                "color": ad["color"],
+                "phone": ad["phone"],
+            }
+        )
+
+    for alert_ad in triggered_alerts:
+        await broadcast_price_alert(
+            {
+                "vehicle_key": alert_ad["vehicle_key"],
+                "vehicle_name": alert_ad["vehicle_name"],
+                "price_million": alert_ad["price_million"],
+            }
+        )
+
+    for ad in saved_ads:
+        if (
+            ad["vehicle_key"]
+            and ad["price_million"]
+        ):
+            price_event = check_price_change(
+                ad["vehicle_key"],
+                ad["price_million"],
+            )
+
+            if price_event:
+                await broadcast_price_update(
+                    price_event
+                )
+
+    for ad in ads:
+        if ad.status == "sale" and ad.vehicle_name and ad.price_million:
+            print(f"[{username}] {ad.vehicle_name}: {ad.price_million} million | confidence={ad.confidence}")
 
 
 async def run_forever() -> None:
