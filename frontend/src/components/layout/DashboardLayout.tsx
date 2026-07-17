@@ -43,7 +43,7 @@ export default function DashboardLayout({ children }: Props) {
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_82%_12%,rgba(34,211,238,.16),transparent_26%),radial-gradient(circle_at_16%_92%,rgba(244,63,94,.13),transparent_28%)]" />
       <Sidebar />
       <Header theme={theme} onToggleTheme={() => setTheme((value) => (value === "dark" ? "light" : "dark"))} />
-      <main className="relative mr-64 h-screen overflow-hidden pt-20 max-lg:mr-0 max-sm:pb-20 max-sm:pt-16">
+      <main className="relative mr-64 h-screen overflow-hidden pt-14 max-lg:mr-0 max-sm:pb-20 max-sm:pt-12">
         <div className="h-full overflow-hidden px-4 py-2 sm:px-5 lg:px-7">{children}</div>
       </main>
     </div>

@@ -19,7 +19,7 @@ export default function Header({ theme, onToggleTheme }: Props) {
   });
 
   return (
-    <header className="glass-panel fixed left-0 right-64 top-0 z-20 relative flex h-20 items-center justify-between gap-3 px-4 max-lg:right-0 max-sm:h-16 lg:px-7">
+    <header className="glass-panel fixed left-0 right-64 top-0 z-20 relative flex h-14 items-center justify-between gap-3 px-4 max-lg:right-0 max-sm:h-12 lg:px-7">
       <div className="flex items-center gap-2 sm:gap-3">
         <button
           aria-label="تنظیمات و گزارش‌ها"
