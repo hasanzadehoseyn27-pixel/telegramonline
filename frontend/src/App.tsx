@@ -3,6 +3,7 @@ import DashboardLayout from "./components/layout/DashboardLayout";
 import Dashboard from "./pages/Dashboard";
 import Ads from "./pages/Ads";
 import SpecialAds from "./pages/SpecialAds";
+import ChannelMonitor from "./pages/ChannelMonitor";
 import Cheapest from "./pages/Cheapest";
 import Channels from "./pages/Channels";
 import Alerts from "./pages/Alerts";
@@ -44,6 +45,14 @@ function App() {
         element={
           <Protected>
             <SpecialAds />
+          </Protected>
+        }
+      />
+      <Route
+        path="/channel-monitor"
+        element={
+          <Protected>
+            <ChannelMonitor />
           </Protected>
         }
       />

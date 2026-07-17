@@ -1,4 +1,5 @@
 import {
+  Activity,
   Bell,
   Car,
   FileSpreadsheet,
@@ -16,6 +17,7 @@ const desktopMenu = [
   { title: "داشبورد", icon: LayoutDashboard, path: "/" },
   { title: "همه آگهی‌ها", icon: Car, path: "/ads" },
   { title: "آگهی‌های خاص", icon: Sparkles, path: "/special-ads" },
+  { title: "مانیتور زنده", icon: Activity, path: "/channel-monitor" },
   { title: "کمترین", icon: Flame, path: "/cheapest" },
   { title: "کانال‌ها", icon: Radio, path: "/channels" },
   { title: "هشدار", icon: Bell, path: "/alerts" },

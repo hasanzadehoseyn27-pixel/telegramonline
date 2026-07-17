@@ -696,6 +696,68 @@ def total_messages_today(conn: sqlite3.Connection) -> int:
     row = conn.execute("SELECT COUNT(*) AS c FROM ads WHERE day_key = ?", (today,)).fetchone()
     return int(row["c"] or 0)
 
+def list_channel_activity(
+    conn: sqlite3.Connection,
+    day_key: str | None = None,
+    vehicle_keys: list[str] | None = None,
+) -> list[dict]:
+    """مانیتور زنده: تعداد پیام‌های خودرویی (غیرتکراری، چون dedup_key از
+    قبل موقع ذخیره اعمال می‌شه) هر کانال/گروه از نیمه‌شب تا الان.
+
+    هم کانال‌ها (channels) و هم گروه‌های منبع (source_groups) که خودشون
+    هم به‌عنوان کانال ثبت شدن (یعنی پیام‌های خودشون مستقیم ذخیره می‌شه) رو
+    برمی‌گردونه. اگر vehicle_keys داده شود، فقط پیام‌های همون مدل‌ها شمرده
+    می‌شود (برای تب «آگهی‌های خاص»).
+    """
+    day_key = day_key or today_day_key()
+
+    where_vehicle = ""
+    params: list[object] = [day_key]
+    if vehicle_keys:
+        placeholders = []
+        for key in vehicle_keys:
+            placeholders.append("(vehicle_key = ? OR vehicle_key LIKE ?)")
+            params.append(key)
+            params.append(f"{key}::%")
+        where_vehicle = f"AND ({' OR '.join(placeholders)})"
+
+    channel_rows = conn.execute(
+        f"""
+        SELECT
+            c.username AS username,
+            c.title AS title,
+            c.active AS active,
+            (
+                SELECT COUNT(*)
+                FROM ads a
+                WHERE a.channel_username = c.username
+                  AND a.day_key = ?
+                  AND a.vehicle_key IS NOT NULL
+                  {where_vehicle}
+            ) AS car_ads
+        FROM channels c
+        """,
+        params,
+    ).fetchall()
+
+    group_usernames = {row["username"] for row in conn.execute("SELECT username FROM source_groups").fetchall()}
+
+    result = []
+    for row in channel_rows:
+        result.append(
+            {
+                "username": row["username"],
+                "title": row["title"],
+                "type": "group" if row["username"] in group_usernames else "channel",
+                "active": bool(row["active"]),
+                "car_ads": int(row["car_ads"] or 0),
+            }
+        )
+
+    result.sort(key=lambda x: x["car_ads"], reverse=True)
+    return result
+
+
 def get_live_channel_stats(
     conn: sqlite3.Connection,
 ) -> dict:

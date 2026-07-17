@@ -11,6 +11,7 @@ from telegramonline.api.routes import (
     alerts,
     auth,
     channels,
+    channel_monitor,
     channels_live,
     dashboard,
     filters,
@@ -74,6 +75,7 @@ def health_check() -> dict[str, str]:
 app.include_router(stats.router, prefix="/api")
 app.include_router(ads.router, prefix="/api")
 app.include_router(channels.router, prefix="/api")
+app.include_router(channel_monitor.router, prefix="/api")
 app.include_router(source_groups.router, prefix="/api")
 app.include_router(reports.router, prefix="/api")
 app.include_router(filters.router, prefix="/api")
