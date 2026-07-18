@@ -276,6 +276,7 @@ def _clean_detected_vehicle_name(text: str, fallback: str, matched_pattern: str 
             cleaned = re.sub(re.escape(color), " ", cleaned, flags=re.IGNORECASE)
         cleaned = VEHICLE_NAME_NOISE_WORDS_RE.sub(" ", cleaned)
         cleaned = re.sub(r"\b\d{4,6}\b", " ", cleaned)
+        cleaned = re.sub(r"(?<![0-9۰-۹.])\d{1,3}(?:[.,]\d{3}){1,3}(?![0-9۰-۹.])", " ", cleaned)
         cleaned = re.sub(r"[#:_،؛|/\\\-]+", " ", cleaned)
         cleaned = _EMOJI_RE.sub(" ", cleaned)
         cleaned = re.sub(r"\s+", " ", cleaned).strip()
@@ -311,7 +312,7 @@ SPACED_PHONE_RE = re.compile(
 )
 NUMBER_RE = re.compile(r"(?<!\d)(\d{1,3}(?:[./,]\d{1,3}){1,3}|\d{1,5})(?!\d)")
 
-PRICE_HINT_RE = re.compile(r"قیمت|فوری|خوش\s*قیمت|کف|زیر\s*قیمت|🔥|💰")
+PRICE_HINT_RE = re.compile(r"قیمت|فوری|خوش\s*قیمت|کف|زیر\s*قیمت|🔥|💰|💵|💸|💲")
 NON_PRICE_CONTEXT_RE = re.compile(
     r"کارکرد|تا\s*کار|کار\s*کرد|امپر|آمپر|برج|مدل|سال|نفره|پر\b|ماه|بیمه|گارانتی|"
     r"لاستیک|پلاک|کد|رمز|دونه|دستگاه|عدد|تماس|شماره|کاور|دوربین|km|کیلومتر|درجه"
@@ -619,12 +620,22 @@ def _score_price_candidate(
         return None, -100
     if re.search(r"(?:\+?98|0)?9\d{9}", token):
         return None, -100
-    if SPACED_PHONE_RE.search(line):
+    if any(
+        phone_match.start() <= start < phone_match.end() or phone_match.start() < end <= phone_match.end()
+        for phone_match in SPACED_PHONE_RE.finditer(text)
+    ):
         return None, -100
     if re.search(r"تانک\s*500", line, flags=re.IGNORECASE) and token == "500":
         return None, -100
 
     explicit_price = bool(re.search(rf"قیمت\s*[:：\-]?\s*{re.escape(token)}", context))
+    tight_before = text[max(0, start - 4) : start]
+    tight_after = text[end : min(len(text), end + 4)]
+    if re.search(r"[🔥💰💵💸💲]", tight_before + tight_after):
+        # ایموجی پول دقیقاً چسبیده به همین عدد (نه یه‌جای دیگه‌ی خط) — سیگنال
+        # خیلی قوی‌تر از یه کلمه‌ی نامرتبط (مثل «دونه»/«امپر») که به‌خاطر
+        # پیام تک‌خطی (بدون شکست‌خط) به‌طور اتفاقی نزدیک همین عدد افتاده.
+        explicit_price = True
     line_rest = line.replace(token, "", 1)
     mostly_number_line = not bool(re.search(r"[A-Za-zآ-ی]", line_rest))
     has_strong_non_price = bool(
@@ -669,9 +680,9 @@ def _score_price_candidate(
         score += 8
     if raw_value in range(400, 410) or raw_value in range(1400, 1410):
         score -= 45
-    if re.search(r"برج|مدل|سال", line):
+    if re.search(r"برج|مدل|سال", line) and not explicit_price:
         score -= 25
-    if re.search(r"کار|امپر|آمپر|km|کیلومتر", line, flags=re.IGNORECASE):
+    if re.search(r"کار|امپر|آمپر|km|کیلومتر", line, flags=re.IGNORECASE) and not explicit_price:
         score -= 35
     if raw_value <= 12 and not _is_bare_number_line(token, line):
         score -= 40
