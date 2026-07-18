@@ -12,7 +12,9 @@ from telegramonline.api.schemas import (
 )
 from telegramonline.storage import (
     create_price_alert,
+    delete_all_alert_events,
     delete_all_price_alerts,
+    delete_alert_event,
     delete_price_alert,
     get_price_alert,
     list_price_alerts,
@@ -108,7 +110,79 @@ def add_alert(
 
     return row_to_alert(row)
 
+@router.get("/events", response_model=list[AlertEventOut])
+def get_alert_events(
+    limit: int = 50,
+    offset: int = 0,
+    db: Connection = Depends(get_db),
+):
 
+    rows = list_alert_events(
+        db,
+        limit=limit,
+        offset=offset,
+    )
+
+    return [
+        row_to_event(row)
+        for row in rows
+    ]
+
+
+@router.get(
+    "/events/count",
+    response_model=AlertEventCountOut,
+)
+def get_alert_events_count(
+    db: Connection = Depends(get_db),
+):
+
+    return AlertEventCountOut(
+        count=count_alert_events(db)
+    )
+
+
+@router.post("/events/mark-read")
+def mark_events_read(
+    db: Connection = Depends(get_db),
+):
+    marked = mark_alert_events_read(db)
+    return {"ok": True, "marked": marked}
+
+
+@router.delete("/events/{event_id}")
+def remove_alert_event(
+    event_id: int,
+    db: Connection = Depends(get_db),
+):
+    ok = delete_alert_event(db, event_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Event not found")
+    return {"ok": True}
+
+
+@router.delete("/events")
+def remove_all_alert_events(
+    db: Connection = Depends(get_db),
+):
+    deleted = delete_all_alert_events(db)
+    return {"ok": True, "deleted": deleted}
+
+
+@router.delete("")
+def remove_all_alerts(
+    user_id: int,
+    db: Connection = Depends(get_db),
+):
+    deleted = delete_all_price_alerts(db, user_id)
+    return {"ok": True, "deleted": deleted}
+
+
+# نکته‌ی مهم درباره‌ی ترتیب: FastAPI مسیرها رو به همون ترتیبی که ثبت شدن
+# چک می‌کنه. اگه این دو تا route که پارامتر متغیر دارن (/{alert_id}) قبل از
+# مسیرهای ثابت‌متن بالا (مثل /events یا /events/count) ثبت بشن، به‌غلط
+# "events" رو به‌عنوان alert_id تفسیر می‌کنن و مسیر درست هیچ‌وقت اجرا
+# نمی‌شه. برای همین این دو تا حتماً باید *آخر* فایل بمونن.
 @router.delete("/{alert_id}")
 def remove_alert(
     alert_id: int,
@@ -160,51 +234,3 @@ def toggle_alert(
         ok=True,
         active=bool(updated["active"]),
     )
-
-@router.get("/events", response_model=list[AlertEventOut])
-def get_alert_events(
-    limit: int = 50,
-    offset: int = 0,
-    db: Connection = Depends(get_db),
-):
-
-    rows = list_alert_events(
-        db,
-        limit=limit,
-        offset=offset,
-    )
-
-    return [
-        row_to_event(row)
-        for row in rows
-    ]
-
-
-@router.get(
-    "/events/count",
-    response_model=AlertEventCountOut,
-)
-def get_alert_events_count(
-    db: Connection = Depends(get_db),
-):
-
-    return AlertEventCountOut(
-        count=count_alert_events(db)
-    )
-
-
-@router.post("/events/mark-read")
-def mark_events_read(
-    db: Connection = Depends(get_db),
-):
-    marked = mark_alert_events_read(db)
-    return {"ok": True, "marked": marked}
-
-
-@router.delete("")
-def remove_all_alerts(
-    user_id: int,
-    db: Connection = Depends(get_db),
-):
-    deleted = delete_all_price_alerts(db, user_id)
-    return {"ok": True, "deleted": deleted}

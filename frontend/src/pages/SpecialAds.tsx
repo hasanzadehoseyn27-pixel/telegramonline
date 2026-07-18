@@ -118,6 +118,11 @@ export default function SpecialAds() {
                     {formatCount(ads.length)} از {formatCount(total)} آگهی
                   </div>
                 </div>
+                <div className="order-first w-full text-center sm:order-none sm:w-auto">
+                  <span className="rounded-full bg-cyan-300/15 px-3 py-1 text-xs font-black text-cyan-100">
+                    مجموع کل: {formatCount(total)} آگهی
+                  </span>
+                </div>
                 <div className="flex h-9 min-w-0 flex-1 items-center gap-2 rounded-lg border border-white/10 bg-slate-950/70 px-3 sm:max-w-64">
                   <Search size={14} className="shrink-0 text-slate-500" />
                   <input

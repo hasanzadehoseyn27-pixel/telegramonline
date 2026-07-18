@@ -7,6 +7,8 @@ import {
   getAlerts,
   markAlertEventsRead,
   removeAlert,
+  removeAlertEvent,
+  removeAllAlertEvents,
   removeAllAlerts,
   toggleAlert,
 } from "../api/alerts.api";
@@ -67,6 +69,16 @@ export default function Alerts() {
   const removeAllMutation = useMutation({
     mutationFn: () => removeAllAlerts(1),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["alerts"] }),
+  });
+
+  const removeEventMutation = useMutation({
+    mutationFn: removeAlertEvent,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["alert-events"] }),
+  });
+
+  const removeAllEventsMutation = useMutation({
+    mutationFn: removeAllAlertEvents,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["alert-events"] }),
   });
 
   const toggleMutation = useMutation({
@@ -187,9 +199,21 @@ export default function Alerts() {
       </section>
 
       <section className="glass-panel min-h-0 overflow-hidden rounded-xl">
-        <div className="border-b border-white/10 p-4">
-          <div className="font-black">رویدادهای پیدا شده</div>
-          <div className="mt-1 text-xs text-slate-400">{formatNumber(events.length)} هشدار اخیر</div>
+        <div className="flex items-center justify-between gap-2 border-b border-white/10 p-4">
+          <div>
+            <div className="font-black">رویدادهای پیدا شده</div>
+            <div className="mt-1 text-xs text-slate-400">{formatNumber(events.length)} هشدار اخیر</div>
+          </div>
+          {events.length > 0 && (
+            <button
+              onClick={() => removeAllEventsMutation.mutate()}
+              disabled={removeAllEventsMutation.isPending}
+              className="flex items-center gap-1 rounded-lg bg-white/5 px-3 py-1.5 text-xs font-bold text-rose-200 transition hover:bg-rose-500/20 disabled:opacity-50"
+            >
+              <Trash2 size={13} />
+              پاک کردن همه‌ی رویدادها
+            </button>
+          )}
         </div>
         <div className="h-full overflow-auto pb-20 scroll-area">
           <table className="w-full min-w-[820px] text-sm">
@@ -200,6 +224,7 @@ export default function Alerts() {
                 <th className="border-b border-white/10 px-4 py-3 text-right">کانال</th>
                 <th className="border-b border-white/10 px-4 py-3 text-right">تاریخ</th>
                 <th className="border-b border-white/10 px-4 py-3 text-right">تلگرام</th>
+                <th className="border-b border-white/10 px-4 py-3 text-right"></th>
               </tr>
             </thead>
             <tbody>
@@ -223,6 +248,14 @@ export default function Alerts() {
                         <ExternalLink size={18} />
                       </a>
                     )}
+                  </td>
+                  <td className="border-b border-white/10 px-4 py-3">
+                    <button
+                      onClick={() => removeEventMutation.mutate(event.id)}
+                      className="grid h-8 w-8 place-items-center rounded-md bg-rose-500/10 text-rose-200 hover:bg-rose-500/25"
+                    >
+                      <Trash2 size={14} />
+                    </button>
                   </td>
                 </tr>
               ))}

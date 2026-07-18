@@ -105,6 +105,11 @@ export default function AdsTable() {
               {formatCount(ads.length)} از {formatCount(total)} ردیف
             </div>
           </div>
+          <div className="order-first w-full text-center sm:order-none sm:w-auto">
+            <span className="rounded-full bg-cyan-300/15 px-3 py-1 text-xs font-black text-cyan-100">
+              مجموع کل: {formatCount(total)} آگهی
+            </span>
+          </div>
           <div className="flex min-w-0 flex-1 items-center justify-end gap-2 max-sm:w-full max-sm:flex-none">
             <div className="flex h-9 min-w-0 flex-1 items-center gap-2 rounded-xl border border-white/10 bg-slate-950/70 px-3 sm:h-10 sm:max-w-sm">
               <Search size={17} className="shrink-0 text-slate-500" />

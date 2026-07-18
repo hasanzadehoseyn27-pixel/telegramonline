@@ -1259,6 +1259,20 @@ def count_alert_events(
     return int(row["c"] or 0)
 
 
+def delete_alert_event(conn: sqlite3.Connection, event_id: int) -> bool:
+    """یک رکورد خاص از «رویدادهای هشدار» را برای همیشه حذف می‌کند."""
+    cursor = conn.execute("DELETE FROM alert_events WHERE id = ?", (event_id,))
+    conn.commit()
+    return cursor.rowcount > 0
+
+
+def delete_all_alert_events(conn: sqlite3.Connection) -> int:
+    """همه‌ی رکوردهای «رویدادهای هشدار» را برای همیشه پاک می‌کند."""
+    cursor = conn.execute("DELETE FROM alert_events")
+    conn.commit()
+    return cursor.rowcount
+
+
 def mark_alert_events_read(conn: sqlite3.Connection) -> int:
     """همه‌ی رخدادهای هشدار را «خوانده‌شده» علامت می‌زند (وقتی کاربر صفحه‌ی
     هشدارها را باز می‌کند)، تا نشان قرمز روی زنگوله دیگر باقی نماند."""

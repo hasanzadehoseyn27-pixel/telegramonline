@@ -83,3 +83,13 @@ export async function removeAllAlerts(userId = 1): Promise<{ ok: boolean; delete
   });
   return response.data;
 }
+
+export async function removeAlertEvent(id: number): Promise<{ ok: boolean }> {
+  const response = await client.delete<{ ok: boolean }>(`/alerts/events/${id}`);
+  return response.data;
+}
+
+export async function removeAllAlertEvents(): Promise<{ ok: boolean; deleted: number }> {
+  const response = await client.delete<{ ok: boolean; deleted: number }>("/alerts/events");
+  return response.data;
+}
