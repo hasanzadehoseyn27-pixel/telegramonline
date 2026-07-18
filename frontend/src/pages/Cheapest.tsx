@@ -1,9 +1,17 @@
 import { AnimatePresence, motion } from "framer-motion";
-import { ChevronLeft, ChevronRight, ExternalLink, Flame, Phone, Search, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, ExternalLink, Flame, Phone, Search, Sparkles, X } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { getAdsForModel, getLiveCheapestVehicles } from "../api/vehicles.api";
+import { CURATED_VEHICLES } from "../data/curatedVehicles";
 import { formatCount, formatDateTime, formatNumber, telegramLink } from "../utils/format";
+
+const CURATED_KEYS = CURATED_VEHICLES.map((v) => v.key);
+
+function isCuratedKey(key: string | null) {
+  if (!key) return false;
+  return CURATED_KEYS.some((curated) => key === curated || key.startsWith(`${curated}::`));
+}
 
 const PAGE_SIZE = 24;
 // وقتی جستجو فعاله، به‌جای فقط همون صفحه، یه بچ بزرگ‌تر می‌گیریم تا جستجو
@@ -109,29 +117,32 @@ export default function Cheapest() {
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(0);
   const [day, setDay] = useState<"today" | "yesterday">("today");
+  const [mode, setMode] = useState<"all" | "special">("all");
   const [selected, setSelected] = useState<{ key: string; name: string }>();
   const isSearching = search.trim().length > 0;
+  const isSpecial = mode === "special";
 
   const { data, isLoading } = useQuery({
-    queryKey: ["vehicles", "cheapest-live", day, isSearching ? "search" : page],
+    queryKey: ["vehicles", "cheapest-live", day, isSpecial ? "special" : isSearching ? "search" : page],
     queryFn: () =>
-      isSearching
+      isSpecial || isSearching
         ? getLiveCheapestVehicles(SEARCH_BATCH_SIZE, 0, day)
         : getLiveCheapestVehicles(PAGE_SIZE, page * PAGE_SIZE, day),
     refetchInterval: 5000,
   });
 
   const items = data?.items ?? [];
-  const total = data?.total ?? 0;
-  const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const total = isSpecial ? undefined : data?.total ?? 0;
+  const pageCount = Math.max(1, Math.ceil((total ?? 0) / PAGE_SIZE));
 
   const filtered = useMemo(() => {
+    const base = isSpecial ? items.filter((item) => isCuratedKey(item.vehicle_key)) : items;
     const normalized = search.trim().toLowerCase();
     if (!normalized) {
-      return items;
+      return base;
     }
 
-    return items.filter((item) => {
+    return base.filter((item) => {
       return [
         item.vehicle_name,
         item.vehicle_key,
@@ -144,7 +155,7 @@ export default function Cheapest() {
         .toLowerCase()
         .includes(normalized);
     });
-  }, [items, search]);
+  }, [items, search, isSpecial]);
 
   return (
     <div className="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)_auto] gap-4">
@@ -160,6 +171,28 @@ export default function Cheapest() {
             </div>
           </div>
           <div className="flex min-w-0 flex-wrap items-center gap-2 max-sm:w-full">
+            <div className="flex h-11 shrink-0 overflow-hidden rounded-xl bg-white/10 text-sm font-black">
+              <button
+                onClick={() => {
+                  setMode("all");
+                  setPage(0);
+                }}
+                className={["flex h-full items-center gap-1.5 px-4 transition", !isSpecial ? "bg-white text-slate-950" : "hover:bg-white/20"].join(" ")}
+              >
+                <Flame size={15} />
+                همه
+              </button>
+              <button
+                onClick={() => {
+                  setMode("special");
+                  setPage(0);
+                }}
+                className={["flex h-full items-center gap-1.5 px-4 transition", isSpecial ? "bg-white text-slate-950" : "hover:bg-white/20"].join(" ")}
+              >
+                <Sparkles size={15} />
+                کمترین‌های خاص
+              </button>
+            </div>
             <div className="flex h-11 min-w-0 flex-1 items-center gap-2 rounded-xl border border-white/10 bg-slate-950/70 px-3 sm:w-72 sm:flex-none">
               <Search size={17} className="shrink-0 text-slate-500" />
               <input
@@ -173,9 +206,9 @@ export default function Cheapest() {
               />
             </div>
             <div className="rounded-full bg-cyan-300 px-4 py-2 text-sm font-black text-slate-950">
-              {isSearching
+              {isSpecial || isSearching
                 ? `${formatCount(filtered.length)} نتیجه`
-                : `${formatCount(items.length)} از ${formatCount(total)} مدل`}
+                : `${formatCount(items.length)} از ${formatCount(total ?? 0)} مدل`}
             </div>
             <div className="flex h-11 shrink-0 overflow-hidden rounded-xl bg-white/10 text-sm font-black">
               <button
@@ -275,7 +308,7 @@ export default function Cheapest() {
         )}
       </div>
 
-      {!isSearching && total > PAGE_SIZE && (
+      {!isSpecial && !isSearching && (total ?? 0) > PAGE_SIZE && (
         <div className="glass-panel flex flex-wrap items-center justify-center gap-2 rounded-2xl p-2.5 sm:justify-between sm:gap-3 sm:p-3">
           <button
             type="button"

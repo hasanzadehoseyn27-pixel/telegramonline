@@ -1,6 +1,5 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 import DashboardLayout from "./components/layout/DashboardLayout";
-import Dashboard from "./pages/Dashboard";
 import Ads from "./pages/Ads";
 import SpecialAds from "./pages/SpecialAds";
 import ChannelMonitor from "./pages/ChannelMonitor";
@@ -28,7 +27,7 @@ function App() {
         path="/"
         element={
           <Protected>
-            <Dashboard />
+            <Ads />
           </Protected>
         }
       />

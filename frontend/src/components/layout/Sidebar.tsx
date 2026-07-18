@@ -5,7 +5,6 @@ import {
   FileSpreadsheet,
   Flame,
   Home,
-  LayoutDashboard,
   Radio,
   Settings,
   ShieldCheck,
@@ -14,8 +13,7 @@ import {
 import { NavLink } from "react-router-dom";
 
 const desktopMenu = [
-  { title: "داشبورد", icon: LayoutDashboard, path: "/" },
-  { title: "همه آگهی‌ها", icon: Car, path: "/ads" },
+  { title: "همه آگهی‌ها", icon: Car, path: "/" },
   { title: "آگهی‌های خاص", icon: Sparkles, path: "/special-ads" },
   { title: "مانیتور زنده", icon: Activity, path: "/channel-monitor" },
   { title: "کمترین", icon: Flame, path: "/cheapest" },
