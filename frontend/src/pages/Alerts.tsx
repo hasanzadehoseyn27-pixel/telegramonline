@@ -219,6 +219,7 @@ export default function Alerts() {
           <table className="w-full min-w-[820px] text-sm">
             <thead className="sticky top-0 bg-slate-950/95 text-slate-400">
               <tr>
+                <th className="border-b border-white/10 px-4 py-3 text-right">#</th>
                 <th className="border-b border-white/10 px-4 py-3 text-right">خودرو</th>
                 <th className="border-b border-white/10 px-4 py-3 text-right">قیمت</th>
                 <th className="border-b border-white/10 px-4 py-3 text-right">کانال</th>
@@ -228,8 +229,9 @@ export default function Alerts() {
               </tr>
             </thead>
             <tbody>
-              {events.map((event) => (
+              {events.map((event, index) => (
                 <tr key={event.id} className="hover:bg-white/5">
+                  <td className="border-b border-white/10 px-4 py-3 text-slate-500">{index + 1}</td>
                   <td className="border-b border-white/10 px-4 py-3 font-bold">
                     {event.vehicle_name ?? event.vehicle_key ?? "-"}
                   </td>

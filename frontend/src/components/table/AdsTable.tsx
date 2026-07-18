@@ -7,7 +7,7 @@ import type { Ad } from "../../api/ads.api";
 import AdDetailModal from "../modal/AdDetailModal";
 import { formatCount, formatDateTime, formatNumber, telegramLink } from "../../utils/format";
 
-const headers = ["خودرو", "قیمت", "مدل", "رنگ", "کارکرد", "تلفن", "کانال", "تاریخ و ساعت"];
+const headers = ["#", "خودرو", "قیمت", "مدل", "رنگ", "کارکرد", "تلفن", "کانال", "تاریخ و ساعت"];
 type PageItem = number | "dots";
 
 function isInsideTimeRange(ad: Ad, hours?: number) {
@@ -165,6 +165,9 @@ export default function AdsTable() {
                       onClick={() => setSelectedAdId(ad.id)}
                       className="cursor-pointer border-b border-white/10 transition hover:bg-white/[0.07]"
                     >
+                      <td className="whitespace-nowrap border-b border-white/10 px-4 py-3 text-slate-500">
+                        {offset + index + 1}
+                      </td>
                       <td className="whitespace-nowrap border-b border-white/10 px-4 py-3 font-bold text-white">
                         {ad.vehicle_name ?? "نامشخص"}
                       </td>
