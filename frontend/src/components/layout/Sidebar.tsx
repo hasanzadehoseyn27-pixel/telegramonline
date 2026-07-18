@@ -1,5 +1,4 @@
 import {
-  Activity,
   Bell,
   Car,
   FileSpreadsheet,
@@ -15,7 +14,6 @@ import { NavLink } from "react-router-dom";
 const desktopMenu = [
   { title: "همه آگهی‌ها", icon: Car, path: "/" },
   { title: "آگهی‌های خاص", icon: Sparkles, path: "/special-ads" },
-  { title: "مانیتور زنده", icon: Activity, path: "/channel-monitor" },
   { title: "کمترین", icon: Flame, path: "/cheapest" },
   { title: "کانال‌ها", icon: Radio, path: "/channels" },
   { title: "هشدار", icon: Bell, path: "/alerts" },
