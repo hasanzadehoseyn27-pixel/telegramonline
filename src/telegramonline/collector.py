@@ -13,6 +13,7 @@ from telethon.tl.types import PeerChannel
 
 from .config import Settings
 from .api.events import broadcast_new_ad, broadcast_price_alert, broadcast_price_update
+from .carx_bridge import ad_row_to_dto, push_ads_async
 from .api.price_tracker import check_price_change
 from .net import parse_proxy_from_env
 from .parser import parse_message_group
@@ -461,6 +462,14 @@ async def _handle_new_message(event, client, conn, known: set[str], known_groups
         return
     ads = parse_message_group(str(event.message.id), event.message.message, event.message.date, source="live")
     saved_ads = save_ads(conn, ads, channel_id=channel["id"], channel_username=username)
+
+    # فرستادن زنده‌ی آگهی‌های قیمت‌دار به سایت اصلی (CarX) — اگه تنظیم نشده
+    # باشه یا بک‌اند در دسترس نباشه، push_ads_async خودش بی‌سروصدا رد میشه.
+    priced_for_carx = [
+        ad_row_to_dto(ad) for ad in saved_ads if ad["status"] == "sale" and ad["price_million"]
+    ]
+    if priced_for_carx:
+        await push_ads_async(priced_for_carx)
 
     triggered_alerts = check_price_alerts(
         conn,
