@@ -2,11 +2,13 @@ from __future__ import annotations
 
 """پل بین telegramonline و بک‌اند سایت اصلی (keyvankhodro-back / CarX).
 
-آگهی‌های قیمت‌دار (و آگهی‌های خاص از لیست watched_vehicles) رو به یه API
-روی بک‌اند ASP.NET می‌فرسته. دو کاربرد داره:
+آگهی‌های قیمت‌دار + خاص (watched_vehicles) + خریدارم رو به یه API روی
+بک‌اند ASP.NET می‌فرسته. هر کانال تلگرام اونجا یه پروفایل/نمایشگاه جدا و
+خودکار می‌گیره (نه یه اکانت مشترک). دو کاربرد داره:
 
-1. بک‌فیل یک‌باره‌ی «دیروز»:
+1. بک‌فیل یک‌باره‌ی امروز/دیروز:
        $env:PYTHONPATH="src"
+       py -m telegramonline.push_today_to_carx
        py -m telegramonline.push_yesterday_to_carx
 
 2. فرستادن زنده‌ی هر آگهی تازه (فراخوانی از collector.py هنگام دریافت پیام
@@ -24,7 +26,13 @@ from typing import Any, Iterable
 
 import httpx
 
-from .storage import list_priced_ads_for_web, list_special_ads, today_day_key, yesterday_day_key
+from .storage import (
+    list_buyer_ads_for_web,
+    list_priced_ads_for_web,
+    list_special_ads,
+    today_day_key,
+    yesterday_day_key,
+)
 
 
 def _source_id(row: sqlite3.Row) -> str:
@@ -32,7 +40,20 @@ def _source_id(row: sqlite3.Row) -> str:
     return f"{channel}:{row['source_message_id']}"
 
 
-def ad_row_to_dto(row: sqlite3.Row, is_special: bool = False) -> dict[str, Any]:
+def _channel_titles(conn: sqlite3.Connection) -> dict[str, str]:
+    """نقشه‌ی username کانال -> عنوان واقعیش (برای اسم نمایشگاه تو CarX)."""
+    rows = conn.execute("SELECT username, title FROM channels").fetchall()
+    return {row["username"]: row["title"] for row in rows if row["title"]}
+
+
+def ad_row_to_dto(
+    row: sqlite3.Row,
+    is_special: bool = False,
+    channel_titles: dict[str, str] | None = None,
+) -> dict[str, Any]:
+    channel_username = row["channel_username"]
+    channel_title = (channel_titles or {}).get(channel_username or "")
+
     return {
         "telegramSourceId": _source_id(row),
         "vehicleName": row["vehicle_name"],
@@ -41,9 +62,10 @@ def ad_row_to_dto(row: sqlite3.Row, is_special: bool = False) -> dict[str, Any]:
         "color": row["color"],
         "mileageKm": row["mileage_km"],
         "phone": row["phone"],
-        "priceMillion": row["price_million"],
+        "priceMillion": row["price_million"] if "price_million" in row.keys() else None,
         "rawText": row["raw_text"],
-        "channelUsername": row["channel_username"],
+        "channelUsername": channel_username,
+        "channelTitle": channel_title,
         "sourceMessageId": row["source_message_id"],
         "status": row["status"],
         "isSpecial": is_special,
@@ -108,12 +130,13 @@ async def push_ads_async(rows: Iterable[dict[str, Any]]) -> None:
         print(f"⚠️ ارسال زنده به CarX با خطا مواجه شد: {exc}")
 
 
-def collect_yesterday_rows(conn: sqlite3.Connection, limit: int = 500) -> list[dict[str, Any]]:
-    """آگهی‌های قیمت‌دار + آگهی‌های خاصِ دیروز رو جمع می‌کنه (بدون تکرار)."""
-    day_key = yesterday_day_key()
+def collect_rows_for_day(conn: sqlite3.Connection, day_key: str, limit: int = 1000) -> list[dict[str, Any]]:
+    """آگهی‌های قیمت‌دار + خاص + خریدارمِ یه روز خاص رو جمع می‌کنه (بدون تکرار)."""
+    channel_titles = _channel_titles(conn)
 
     priced = list_priced_ads_for_web(conn, sort="newest", limit=limit, offset=0, day_key=day_key)
     special = list_special_ads(conn, limit=limit, offset=0, day_key=day_key)
+    buyers = list_buyer_ads_for_web(conn, sort="newest", limit=limit, offset=0, day_key=day_key)
 
     seen: set[str] = set()
     rows: list[dict[str, Any]] = []
@@ -123,13 +146,29 @@ def collect_yesterday_rows(conn: sqlite3.Connection, limit: int = 500) -> list[d
         if sid in seen:
             continue
         seen.add(sid)
-        rows.append(ad_row_to_dto(row, is_special=True))
+        rows.append(ad_row_to_dto(row, is_special=True, channel_titles=channel_titles))
 
     for row in priced:
         sid = _source_id(row)
         if sid in seen:
             continue
         seen.add(sid)
-        rows.append(ad_row_to_dto(row, is_special=False))
+        rows.append(ad_row_to_dto(row, is_special=False, channel_titles=channel_titles))
+
+    for row in buyers:
+        sid = _source_id(row)
+        if sid in seen:
+            continue
+        seen.add(sid)
+        rows.append(ad_row_to_dto(row, is_special=False, channel_titles=channel_titles))
 
     return rows
+
+
+def collect_yesterday_rows(conn: sqlite3.Connection, limit: int = 1000) -> list[dict[str, Any]]:
+    return collect_rows_for_day(conn, yesterday_day_key(), limit=limit)
+
+
+def collect_today_rows(conn: sqlite3.Connection, limit: int = 1000) -> list[dict[str, Any]]:
+    return collect_rows_for_day(conn, today_day_key(), limit=limit)
+

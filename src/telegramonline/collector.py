@@ -463,13 +463,17 @@ async def _handle_new_message(event, client, conn, known: set[str], known_groups
     ads = parse_message_group(str(event.message.id), event.message.message, event.message.date, source="live")
     saved_ads = save_ads(conn, ads, channel_id=channel["id"], channel_username=username)
 
-    # فرستادن زنده‌ی آگهی‌های قیمت‌دار به سایت اصلی (CarX) — اگه تنظیم نشده
-    # باشه یا بک‌اند در دسترس نباشه، push_ads_async خودش بی‌سروصدا رد میشه.
-    priced_for_carx = [
-        ad_row_to_dto(ad) for ad in saved_ads if ad["status"] == "sale" and ad["price_million"]
+    # فرستادن زنده‌ی آگهی‌های قیمت‌دار + خریدارم به سایت اصلی (CarX) — اگه
+    # تنظیم نشده باشه یا بک‌اند در دسترس نباشه، push_ads_async خودش
+    # بی‌سروصدا رد میشه.
+    channel_title_map = {username: channel["title"]} if channel["title"] else {}
+    ads_for_carx = [
+        ad_row_to_dto(ad, channel_titles=channel_title_map)
+        for ad in saved_ads
+        if (ad["status"] == "sale" and ad["price_million"]) or ad["status"] == "buyer"
     ]
-    if priced_for_carx:
-        await push_ads_async(priced_for_carx)
+    if ads_for_carx:
+        await push_ads_async(ads_for_carx)
 
     triggered_alerts = check_price_alerts(
         conn,
