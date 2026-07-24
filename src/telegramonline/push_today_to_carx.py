@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-"""بک‌فیل یک‌باره‌ی آگهی‌های قیمت‌دار + خاص + خریدارمِ امروز به سایت اصلی (CarX).
+"""بک‌فیل یک‌باره‌ی آگهی‌های قیمت‌دار + بدون‌قیمت + خاص + خریدارمِ امروز به سایت اصلی (CarX).
 
 اجرا (از ریشه‌ی پروژه‌ی telegramonline):
     $env:PYTHONPATH="src"
@@ -21,7 +21,7 @@ def main() -> None:
     conn = connect(settings.database_path)
 
     rows = collect_today_rows(conn)
-    print(f"{len(rows)} آگهی (قیمت‌دار + خاص + خریدارم) از امروز پیدا شد.")
+    print(f"{len(rows)} آگهی (قیمت‌دار + بدون‌قیمت + خاص + خریدارم) از امروز پیدا شد.")
 
     if not rows:
         return

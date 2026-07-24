@@ -30,6 +30,7 @@ from .storage import (
     list_buyer_ads_for_web,
     list_priced_ads_for_web,
     list_special_ads,
+    list_unpriced_ads_for_web,
     today_day_key,
     yesterday_day_key,
 )
@@ -135,6 +136,7 @@ def collect_rows_for_day(conn: sqlite3.Connection, day_key: str, limit: int = 10
     channel_titles = _channel_titles(conn)
 
     priced = list_priced_ads_for_web(conn, sort="newest", limit=limit, offset=0, day_key=day_key)
+    unpriced = list_unpriced_ads_for_web(conn, sort="newest", limit=limit, offset=0, day_key=day_key)
     special = list_special_ads(conn, limit=limit, offset=0, day_key=day_key)
     buyers = list_buyer_ads_for_web(conn, sort="newest", limit=limit, offset=0, day_key=day_key)
 
@@ -149,6 +151,13 @@ def collect_rows_for_day(conn: sqlite3.Connection, day_key: str, limit: int = 10
         rows.append(ad_row_to_dto(row, is_special=True, channel_titles=channel_titles))
 
     for row in priced:
+        sid = _source_id(row)
+        if sid in seen:
+            continue
+        seen.add(sid)
+        rows.append(ad_row_to_dto(row, is_special=False, channel_titles=channel_titles))
+
+    for row in unpriced:
         sid = _source_id(row)
         if sid in seen:
             continue

@@ -21,7 +21,7 @@ def main() -> None:
     conn = connect(settings.database_path)
 
     rows = collect_yesterday_rows(conn)
-    print(f"{len(rows)} آگهی (قیمت‌دار + خاص) از دیروز پیدا شد.")
+    print(f"{len(rows)} آگهی (قیمت‌دار + بدون‌قیمت + خاص + خریدارم) از دیروز پیدا شد.")
 
     if not rows:
         return
