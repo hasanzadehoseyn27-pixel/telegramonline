@@ -26,14 +26,7 @@ from typing import Any, Iterable
 
 import httpx
 
-from .storage import (
-    list_buyer_ads_for_web,
-    list_priced_ads_for_web,
-    list_special_ads,
-    list_unpriced_ads_for_web,
-    today_day_key,
-    yesterday_day_key,
-)
+from .storage import _watched_vehicles_where, today_day_key, yesterday_day_key
 
 
 def _source_id(row: sqlite3.Row) -> str:
@@ -45,6 +38,40 @@ def _channel_titles(conn: sqlite3.Connection) -> dict[str, str]:
     """نقشه‌ی username کانال -> عنوان واقعیش (برای اسم نمایشگاه تو CarX)."""
     rows = conn.execute("SELECT username, title FROM channels").fetchall()
     return {row["username"]: row["title"] for row in rows if row["title"]}
+
+
+def _query_ads_per_channel(
+    conn: sqlite3.Connection,
+    day_key: str,
+    status_sql: str,
+    extra_params: list | None = None,
+    limit: int = 20000,
+) -> list[sqlite3.Row]:
+    """مثل توابع list_*_ads_for_web توی storage.py، ولی به‌جای دی‌ادوپ سراسری
+    (PARTITION BY dedup_key)، دی‌ادوپ رو به‌ازای هر کانال جدا انجام می‌ده
+    (PARTITION BY channel_username, dedup_key). یعنی اگه یه آگهی هم توی
+    کانال خودش، هم توی یه کانال/گروه دیگه (مثلاً بازار بزرگ) پست شده باشه،
+    زیر هر دو کانال جدا دیده می‌شه — فقط تکرار داخل خودِ یک کانال حذف می‌شه.
+    """
+    conn.row_factory = sqlite3.Row
+    extra_params = extra_params or []
+    return conn.execute(
+        f"""
+        WITH matched AS (
+            SELECT *,
+                ROW_NUMBER() OVER (
+                    PARTITION BY channel_username, dedup_key
+                    ORDER BY id DESC
+                ) AS rn
+            FROM ads
+            WHERE day_key = ? AND {status_sql}
+        )
+        SELECT * FROM matched WHERE rn = 1
+        ORDER BY id DESC
+        LIMIT ?
+        """,
+        [day_key, *extra_params, limit],
+    ).fetchall()
 
 
 def ad_row_to_dto(
@@ -131,30 +158,32 @@ async def push_ads_async(rows: Iterable[dict[str, Any]]) -> None:
         print(f"⚠️ ارسال زنده به CarX با خطا مواجه شد: {exc}")
 
 
-def _list_call_price_ads(conn: sqlite3.Connection, day_key: str, limit: int) -> list[sqlite3.Row]:
-    """آگهی‌های «تماس بگیرید» (status='call_price') — این‌ها هم عملاً بدون‌قیمت
-    هستن، ولی هیچ‌وقت helper مستقلی توی storage.py برای وبشون نبود."""
-    conn.row_factory = sqlite3.Row
-    return conn.execute(
-        """
-        SELECT * FROM ads
-        WHERE status = 'call_price' AND day_key = ?
-        ORDER BY id DESC
-        LIMIT ?
-        """,
-        (day_key, limit),
-    ).fetchall()
-
-
 def collect_rows_for_day(conn: sqlite3.Connection, day_key: str, limit: int = 20000) -> list[dict[str, Any]]:
-    """آگهی‌های قیمت‌دار + خاص + خریدارمِ یه روز خاص رو جمع می‌کنه (بدون تکرار)."""
+    """آگهی‌های قیمت‌دار + بدون‌قیمت + تماس‌بگیرید + خاص + خریدارمِ یه روز
+    خاص رو جمع می‌کنه — دی‌ادوپ فقط داخل خودِ هر کانال، نه بین کانال‌ها."""
     channel_titles = _channel_titles(conn)
 
-    priced = list_priced_ads_for_web(conn, sort="newest", limit=limit, offset=0, day_key=day_key)
-    unpriced = list_unpriced_ads_for_web(conn, sort="newest", limit=limit, offset=0, day_key=day_key)
-    call_price = _list_call_price_ads(conn, day_key, limit=limit)
-    special = list_special_ads(conn, limit=limit, offset=0, day_key=day_key)
-    buyers = list_buyer_ads_for_web(conn, sort="newest", limit=limit, offset=0, day_key=day_key)
+    priced = _query_ads_per_channel(
+        conn, day_key, "status = 'sale' AND price_million IS NOT NULL", limit=limit
+    )
+    unpriced = _query_ads_per_channel(
+        conn, day_key, "status = 'sale' AND price_million IS NULL", limit=limit
+    )
+    call_price = _query_ads_per_channel(conn, day_key, "status = 'call_price'", limit=limit)
+    buyers = _query_ads_per_channel(conn, day_key, "status = 'buyer'", limit=limit)
+
+    watched_clause = _watched_vehicles_where(conn)
+    if watched_clause is not None:
+        watched_where, watched_params = watched_clause
+        special = _query_ads_per_channel(
+            conn,
+            day_key,
+            f"status = 'sale' AND price_million IS NOT NULL AND {watched_where}",
+            extra_params=watched_params,
+            limit=limit,
+        )
+    else:
+        special = []
 
     seen: set[str] = set()
     rows: list[dict[str, Any]] = []
