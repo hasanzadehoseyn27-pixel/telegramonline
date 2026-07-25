@@ -131,7 +131,7 @@ async def push_ads_async(rows: Iterable[dict[str, Any]]) -> None:
         print(f"⚠️ ارسال زنده به CarX با خطا مواجه شد: {exc}")
 
 
-def collect_rows_for_day(conn: sqlite3.Connection, day_key: str, limit: int = 1000) -> list[dict[str, Any]]:
+def collect_rows_for_day(conn: sqlite3.Connection, day_key: str, limit: int = 20000) -> list[dict[str, Any]]:
     """آگهی‌های قیمت‌دار + خاص + خریدارمِ یه روز خاص رو جمع می‌کنه (بدون تکرار)."""
     channel_titles = _channel_titles(conn)
 
@@ -174,10 +174,10 @@ def collect_rows_for_day(conn: sqlite3.Connection, day_key: str, limit: int = 10
     return rows
 
 
-def collect_yesterday_rows(conn: sqlite3.Connection, limit: int = 1000) -> list[dict[str, Any]]:
+def collect_yesterday_rows(conn: sqlite3.Connection, limit: int = 20000) -> list[dict[str, Any]]:
     return collect_rows_for_day(conn, yesterday_day_key(), limit=limit)
 
 
-def collect_today_rows(conn: sqlite3.Connection, limit: int = 1000) -> list[dict[str, Any]]:
+def collect_today_rows(conn: sqlite3.Connection, limit: int = 20000) -> list[dict[str, Any]]:
     return collect_rows_for_day(conn, today_day_key(), limit=limit)
 
