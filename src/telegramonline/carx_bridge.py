@@ -131,12 +131,28 @@ async def push_ads_async(rows: Iterable[dict[str, Any]]) -> None:
         print(f"⚠️ ارسال زنده به CarX با خطا مواجه شد: {exc}")
 
 
+def _list_call_price_ads(conn: sqlite3.Connection, day_key: str, limit: int) -> list[sqlite3.Row]:
+    """آگهی‌های «تماس بگیرید» (status='call_price') — این‌ها هم عملاً بدون‌قیمت
+    هستن، ولی هیچ‌وقت helper مستقلی توی storage.py برای وبشون نبود."""
+    conn.row_factory = sqlite3.Row
+    return conn.execute(
+        """
+        SELECT * FROM ads
+        WHERE status = 'call_price' AND day_key = ?
+        ORDER BY id DESC
+        LIMIT ?
+        """,
+        (day_key, limit),
+    ).fetchall()
+
+
 def collect_rows_for_day(conn: sqlite3.Connection, day_key: str, limit: int = 20000) -> list[dict[str, Any]]:
     """آگهی‌های قیمت‌دار + خاص + خریدارمِ یه روز خاص رو جمع می‌کنه (بدون تکرار)."""
     channel_titles = _channel_titles(conn)
 
     priced = list_priced_ads_for_web(conn, sort="newest", limit=limit, offset=0, day_key=day_key)
     unpriced = list_unpriced_ads_for_web(conn, sort="newest", limit=limit, offset=0, day_key=day_key)
+    call_price = _list_call_price_ads(conn, day_key, limit=limit)
     special = list_special_ads(conn, limit=limit, offset=0, day_key=day_key)
     buyers = list_buyer_ads_for_web(conn, sort="newest", limit=limit, offset=0, day_key=day_key)
 
@@ -158,6 +174,13 @@ def collect_rows_for_day(conn: sqlite3.Connection, day_key: str, limit: int = 20
         rows.append(ad_row_to_dto(row, is_special=False, channel_titles=channel_titles))
 
     for row in unpriced:
+        sid = _source_id(row)
+        if sid in seen:
+            continue
+        seen.add(sid)
+        rows.append(ad_row_to_dto(row, is_special=False, channel_titles=channel_titles))
+
+    for row in call_price:
         sid = _source_id(row)
         if sid in seen:
             continue

@@ -470,7 +470,7 @@ async def _handle_new_message(event, client, conn, known: set[str], known_groups
     ads_for_carx = [
         ad_row_to_dto(ad, channel_titles=channel_title_map)
         for ad in saved_ads
-        if ad["status"] in ("sale", "buyer")
+        if ad["status"] in ("sale", "buyer", "call_price")
     ]
     if ads_for_carx:
         await push_ads_async(ads_for_carx)
