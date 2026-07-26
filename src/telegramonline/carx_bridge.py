@@ -85,6 +85,7 @@ def ad_row_to_dto(
     return {
         "telegramSourceId": _source_id(row),
         "vehicleName": row["vehicle_name"],
+        "vehicleKey": row["vehicle_key"] if "vehicle_key" in row.keys() else None,
         "trim": row["trim"],
         "year": row["year"],
         "color": row["color"],
