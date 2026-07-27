@@ -1340,11 +1340,11 @@ def get_ad_by_id(
 
 
 def purge_old_ads(conn: sqlite3.Connection) -> int:
-    """فقط امروز و دیروز نگه می‌دارد؛ هر چیز قدیمی‌تر (یا بدون تاریخ) حذف می‌شود.
+    """فقط امروز نگه می‌دارد؛ هر چیز قدیمی‌تر (از جمله دیروز) یا بدون تاریخ حذف می‌شود.
 
     قرار است هر شب حوالی نیمه‌شب به‌وقت تهران اجرا شود (توسط collector.py).
     """
-    cutoff = yesterday_day_key()
+    cutoff = today_day_key()
     before = conn.total_changes
     conn.execute("DELETE FROM ads WHERE day_key IS NULL OR day_key < ?", (cutoff,))
     conn.commit()

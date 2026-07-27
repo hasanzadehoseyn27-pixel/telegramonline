@@ -373,7 +373,7 @@ def _seconds_until_next_tehran_midnight() -> float:
 
 
 async def midnight_purge_loop(conn) -> None:
-    """هر شب کمی بعد از ۰۰:۰۰ به‌وقت تهران، فقط امروز+دیروز را نگه می‌دارد."""
+    """هر شب کمی بعد از ۰۰:۰۰ به‌وقت تهران، فقط امروز را نگه می‌دارد."""
     while True:
         wait_seconds = _seconds_until_next_tehran_midnight()
         print(f"🕛 پاک‌سازی بعدی حدود {wait_seconds / 3600:.1f} ساعت دیگر (نیمه‌شب تهران).", flush=True)
