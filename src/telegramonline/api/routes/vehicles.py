@@ -72,7 +72,7 @@ def cheapest_live(
     limit: int = Query(
         default=50,
         ge=1,
-        le=200,
+        le=5000,
     ),
     offset: int = Query(
         default=0,

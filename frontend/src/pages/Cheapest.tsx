@@ -16,7 +16,7 @@ function isCuratedKey(key: string | null) {
 const PAGE_SIZE = 24;
 // وقتی جستجو فعاله، به‌جای فقط همون صفحه، یه بچ بزرگ‌تر می‌گیریم تا جستجو
 // روی همه‌ی مدل‌های امروز کار کنه، نه فقط صفحه‌ی جاری.
-const SEARCH_BATCH_SIZE = 200;
+const SEARCH_BATCH_SIZE = 5000;
 
 function VehicleAdsModal({
   vehicleKey,
