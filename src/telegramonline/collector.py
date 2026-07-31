@@ -195,7 +195,8 @@ async def sync_channels(client: TelegramClient, conn) -> set[str]:
     اضافه‌اش کند.
     """
     for channel in list_unjoined_channels(conn):
-        if not _may_attempt_join_now():
+        is_priority = bool(channel["priority_join"]) if "priority_join" in channel.keys() else False
+        if not is_priority and not _may_attempt_join_now():
             break
         username = channel["username"]
         print(f"🆕 کانال جدید شناسایی شد: {username} — در حال عضویت و بک‌فیل امروز...", flush=True)

@@ -59,6 +59,7 @@ def create_channel(
     channel_id = add_channel(
         db,
         payload.username,
+        priority=True,
     )
 
 

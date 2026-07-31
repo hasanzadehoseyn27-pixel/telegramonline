@@ -254,6 +254,8 @@ def _ensure_columns(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE channels ADD COLUMN joined INTEGER NOT NULL DEFAULT 0")
     if existing_channels_cols and "join_attempts" not in existing_channels_cols:
         conn.execute("ALTER TABLE channels ADD COLUMN join_attempts INTEGER NOT NULL DEFAULT 0")
+    if existing_channels_cols and "priority_join" not in existing_channels_cols:
+        conn.execute("ALTER TABLE channels ADD COLUMN priority_join INTEGER NOT NULL DEFAULT 0")
     existing_alert_events_cols = set()
     try:
         existing_alert_events_cols = {
@@ -456,22 +458,39 @@ def _clean_username(raw: str) -> str:
     return value.strip().rstrip("/")
 
 
-def add_channel(conn: sqlite3.Connection, username: str, title: str | None = None) -> int | None:
-    """کانال جدید اضافه می‌کند. اگر تکراری بود، همون رکورد موجود را فعال می‌کند."""
+def add_channel(
+    conn: sqlite3.Connection,
+    username: str,
+    title: str | None = None,
+    priority: bool = False,
+) -> int | None:
+    """کانال جدید اضافه می‌کند. اگر تکراری بود، همون رکورد موجود را فعال می‌کند.
+
+    priority=True یعنی این کانال دستی (از پنل ادمین) اضافه شده و باید در دور
+    بعدیِ sync_channels (حداکثر ۳۰ ثانیه دیگر) بدون رعایت صف‌انتظار ۱۵دقیقه‌ای
+    فوراً join بشه — برخلاف کانال‌هایی که خودکار از فوروارد کشف می‌شن.
+    """
     clean = _clean_username(username)
     if not clean:
         return None
+    priority_value = 1 if priority else 0
     try:
         cursor = conn.execute(
-            "INSERT INTO channels (username, title) VALUES (?, ?)",
-            (clean, title),
+            "INSERT INTO channels (username, title, priority_join) VALUES (?, ?, ?)",
+            (clean, title, priority_value),
         )
         conn.commit()
         return cursor.lastrowid
     except sqlite3.IntegrityError:
         row = conn.execute("SELECT id FROM channels WHERE username = ?", (clean,)).fetchone()
         if row:
-            conn.execute("UPDATE channels SET active = 1, join_attempts = 0 WHERE id = ?", (row["id"],))
+            if priority:
+                conn.execute(
+                    "UPDATE channels SET active = 1, join_attempts = 0, priority_join = 1 WHERE id = ?",
+                    (row["id"],),
+                )
+            else:
+                conn.execute("UPDATE channels SET active = 1, join_attempts = 0 WHERE id = ?", (row["id"],))
             conn.commit()
             return row["id"]
         return None
@@ -629,9 +648,14 @@ def get_channel_by_username(conn: sqlite3.Connection, username: str) -> sqlite3.
 
 
 def list_unjoined_channels(conn: sqlite3.Connection) -> list[sqlite3.Row]:
-    """کانال‌هایی که فقط ثبت شده‌اند ولی هنوز اکانت تلگرام عضوشان نشده."""
+    """کانال‌هایی که فقط ثبت شده‌اند ولی هنوز اکانت تلگرام عضوشان نشده.
+
+    کانال‌های priority_join=1 (اضافه‌شده‌ی دستی از پنل ادمین) همیشه اول
+    میان، تا بدون رعایت صف‌انتظار ۱۵دقیقه‌ای فوراً پردازش بشن.
+    """
     return conn.execute(
-        "SELECT * FROM channels WHERE active = 1 AND joined = 0 ORDER BY added_at"
+        "SELECT * FROM channels WHERE active = 1 AND joined = 0 "
+        "ORDER BY priority_join DESC, added_at"
     ).fetchall()
 
 
