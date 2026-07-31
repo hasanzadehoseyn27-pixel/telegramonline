@@ -13,7 +13,7 @@ from telethon import TelegramClient
 from telegramonline.collector import backfill_today, join_channel
 from telegramonline.config import Settings
 from telegramonline.net import parse_proxy_from_env
-from telegramonline.storage import connect, get_channel_by_username
+from telegramonline.storage import connect, get_channel_by_username, mark_channel_joined
 
 
 async def main(username: str) -> None:
@@ -40,6 +40,14 @@ async def main(username: str) -> None:
     if not joined:
         print(f"❌ join نشد.")
         return
+
+    title = channel["title"]
+    try:
+        entity = await client.get_entity(username)
+        title = getattr(entity, "title", None) or title
+    except Exception:  # noqa: BLE001
+        pass
+    mark_channel_joined(conn, channel["id"], title=title)
 
     print("✅ join شد. در حال بک‌فیل امروز...")
     inserted = await backfill_today(client, conn, channel["id"], username)
