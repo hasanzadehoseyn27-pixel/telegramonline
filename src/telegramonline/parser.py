@@ -283,6 +283,12 @@ def _clean_detected_vehicle_name(text: str, fallback: str, matched_pattern: str 
         cleaned = re.sub(r"\b(207)\s+\1\b", r"\1", cleaned)
         if not cleaned:
             continue
+        # اگه بعد از پاک‌سازی فقط یه عدد کوتاه تنها (مثلاً از یه لیست
+        # شماره‌گذاری‌شده «۱.» «۲.») مونده، این اسم معتبر نیست — ولی به شماره‌ی
+        # مدل‌های واقعی مثل «206»/«207»/«405» (۳+ رقمی) کاری نداریم.
+        digits_only = re.fullmatch(r"[\d۰-۹]+", cleaned)
+        if (digits_only and len(cleaned) <= 2) or len(cleaned) < 2:
+            continue
         score = 0
         if matched_pattern and re.search(matched_pattern, compact_text(line).lower(), flags=re.IGNORECASE):
             score += 1000
