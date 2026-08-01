@@ -27,6 +27,7 @@ from typing import Any, Iterable
 import httpx
 
 from .storage import _watched_vehicles_where, today_day_key, yesterday_day_key
+from .zero_whitelist import match_zero_whitelist
 
 
 def _source_id(row: sqlite3.Row) -> str:
@@ -85,7 +86,7 @@ def ad_row_to_dto(
     return {
         "telegramSourceId": _source_id(row),
         "vehicleName": row["vehicle_name"],
-        "vehicleKey": row["vehicle_key"] if "vehicle_key" in row.keys() else None,
+        "vehicleKey": match_zero_whitelist(row["vehicle_name"], row["trim"], row["raw_text"]),
         "trim": row["trim"],
         "year": row["year"],
         "color": row["color"],
