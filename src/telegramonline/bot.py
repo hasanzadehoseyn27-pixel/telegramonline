@@ -108,35 +108,58 @@ def get_cheapest_whitelisted_models(conn, day_key: str | None = None) -> list[di
         }
         for key, g in groups.items()
     ]
-    result.sort(key=lambda x: x["title"])
+    result.sort(key=lambda x: x["count"], reverse=True)
     return result
 
 
-CHEAPEST_PAGE_SIZE = 15
+CHEAPEST_PAGE_SIZE = 10
 
 
-def format_cheapest_page(items: list[dict], offset: int, day_label: str) -> str:
+def format_cheapest_header(items: list[dict], offset: int, day_label: str) -> str:
     if not items:
         return f"💰 کمترین قیمت‌ها ({day_label})\n\nهنوز داده‌ای برای {day_label} نیست."
+    return f"💰 کمترین قیمت‌ها — {day_label} ({len(items)} مدل) — بر اساس تعداد آگهی\nروی هر مدل بزن تا همه‌ی آگهی‌هاش رو ببینی."
+
+
+def cheapest_list_buttons(items: list[dict], offset: int, day: str) -> list[list[Button]]:
     page = items[offset : offset + CHEAPEST_PAGE_SIZE]
-    lines = [f"💰 کمترین قیمت‌ها — {day_label} ({len(items)} مدل) — از مورد {offset + 1}", ""]
-    for i, item in enumerate(page, start=offset + 1):
-        lines.append(
-            f"{i}. {item['title']}\n   از {format_price(item['min_price'])} — {item['count']} آگهی"
-        )
-    return "\n".join(lines)
-
-
-def cheapest_nav_buttons(offset: int, total: int, day: str) -> list[list[Button]]:
+    rows: list[list[Button]] = [
+        [Button.inline(f"{item['title']} — {item['count']} آگهی", f"cheapdet:{item['key']}:{day}:0".encode())]
+        for item in page
+    ]
     nav = []
     if offset > 0:
         nav.append(Button.inline("⬅️ قبلی", f"cheapest:{max(0, offset - CHEAPEST_PAGE_SIZE)}:{day}".encode()))
-    if offset + CHEAPEST_PAGE_SIZE < total:
+    if offset + CHEAPEST_PAGE_SIZE < len(items):
         nav.append(Button.inline("بعدی ➡️", f"cheapest:{offset + CHEAPEST_PAGE_SIZE}:{day}".encode()))
-    rows = [nav] if nav else []
+    if nav:
+        rows.append(nav)
     other_day = "yesterday" if day == "today" else "today"
     other_label = "📅 دیروز" if day == "today" else "📅 امروز"
     rows.append([Button.inline(other_label, f"cheapest:0:{other_day}".encode())])
+    rows.append([Button.inline("🏠 صفحه اصلی", b"home")])
+    return rows
+
+
+def get_ads_for_whitelist_key(conn, key: str, day_key: str) -> list:
+    """همه‌ی آگهی‌های قیمت‌دارِ یه مدل خاص لیست‌سفیدی، ارزون به گرون."""
+    rows = conn.execute(
+        "SELECT * FROM ads WHERE status = 'sale' AND price_million IS NOT NULL AND day_key = ?",
+        (day_key,),
+    ).fetchall()
+    matched = [r for r in rows if match_zero_whitelist(r["vehicle_name"], r["trim"]) == key]
+    matched.sort(key=lambda r: r["price_million"])
+    return matched
+
+
+def cheapdet_nav_buttons(key: str, day: str, offset: int, total: int) -> list[list[Button]]:
+    nav = []
+    if offset > 0:
+        nav.append(Button.inline("⬅️ قبلی", f"cheapdet:{key}:{day}:{max(0, offset - PAGE_SIZE)}".encode()))
+    if offset + PAGE_SIZE < total:
+        nav.append(Button.inline("بعدی ➡️", f"cheapdet:{key}:{day}:{offset + PAGE_SIZE}".encode()))
+    rows = [nav] if nav else []
+    rows.append([Button.inline("⬅️ برگشت به لیست مدل‌ها", f"cheapest:0:{day}".encode())])
     rows.append([Button.inline("🏠 صفحه اصلی", b"home")])
     return rows
 
@@ -574,27 +597,46 @@ async def run_bot() -> None:
                     buttons=channel_buttons(conn),
                 )
             return
-        key = match_zero_whitelist(text, None)
-        if key is None:
+        needle = _normalize_for_dedup(text)
+
+        found_items: list[dict] = []
+        found_day = "today"
+        for day, day_key in (("today", today_day_key()), ("yesterday", yesterday_day_key())):
+            items = get_cheapest_whitelisted_models(conn, day_key=day_key)
+            matches = [it for it in items if needle in _normalize_for_dedup(it["title"])]
+            if matches:
+                matches.sort(key=lambda x: x["count"], reverse=True)
+                found_items = matches
+                found_day = day
+                break
+
+        if not found_items:
             await event.respond(
                 "🚫 ماشین شما به لیست «کمترین قیمت‌ها» اضافه نشده است.",
                 buttons=[[Button.inline("💰 کمترین قیمت‌ها", b"cheapest:0:today")]],
             )
             return
 
-        items = get_cheapest_whitelisted_models(conn, day_key=today_day_key())
-        match = next((it for it in items if it["key"] == key), None)
-        if match is None:
+        day_label = "امروز" if found_day == "today" else "دیروز"
+
+        if len(found_items) == 1:
+            match = found_items[0]
             await event.respond(
-                "🚫 ماشین شما تو خانواده‌ی «کمترین قیمت‌ها» هست، ولی امروز آگهی قیمت‌داری ازش پیدا نشد.",
-                buttons=[[Button.inline("💰 کمترین قیمت‌ها", b"cheapest:0:today")]],
+                f"💰 {match['title']} — {day_label}\n\nاز {format_price(match['min_price'])} — {match['count']} آگهی",
+                buttons=[
+                    [Button.inline("📋 همه‌ی آگهی‌های این مدل", f"cheapdet:{match['key']}:{found_day}:0".encode())],
+                    [Button.inline("💰 کمترین قیمت‌ها (همه)", f"cheapest:0:{found_day}".encode())],
+                ],
             )
             return
 
-        await event.respond(
-            f"💰 {match['title']}\n\nاز {format_price(match['min_price'])} — {match['count']} آگهی امروز",
-            buttons=[[Button.inline("💰 کمترین قیمت‌ها (همه)", b"cheapest:0:today")]],
-        )
+        text_msg = f"💰 «{text}» — {day_label} ({len(found_items)} مدل پیدا شد)\nروی هر مدل بزن تا آگهی‌هاش رو ببینی."
+        rows = [
+            [Button.inline(f"{it['title']} — {it['count']} آگهی", f"cheapdet:{it['key']}:{found_day}:0".encode())]
+            for it in found_items[:15]
+        ]
+        rows.append([Button.inline("💰 کمترین قیمت‌ها (همه)", f"cheapest:0:{found_day}".encode())])
+        await event.respond(text_msg, buttons=rows)
 
     @client.on(events.CallbackQuery)
     async def callback(event) -> None:
@@ -614,8 +656,20 @@ async def run_bot() -> None:
             day_key = today_day_key() if day == "today" else yesterday_day_key()
             day_label = "امروز" if day == "today" else "دیروز"
             items = get_cheapest_whitelisted_models(conn, day_key=day_key)
-            text = format_cheapest_page(items, offset, day_label)
-            await safe_edit(event, text, buttons=cheapest_nav_buttons(offset, len(items), day))
+            text = format_cheapest_header(items, offset, day_label)
+            await safe_edit(event, text, buttons=cheapest_list_buttons(items, offset, day))
+            return
+        if head == "cheapdet":
+            key = parts[1]
+            day = parts[2] if len(parts) > 2 else "today"
+            offset = int(parts[3]) if len(parts) > 3 else 0
+            day_key = today_day_key() if day == "today" else yesterday_day_key()
+            day_label = "امروز" if day == "today" else "دیروز"
+            all_rows = get_ads_for_whitelist_key(conn, key, day_key)
+            page_rows = all_rows[offset : offset + PAGE_SIZE]
+            title = f"💰 {day_label} — از ارزون به گرون، از مورد {offset + 1} (از {len(all_rows)})"
+            text = format_ad_list(page_rows, with_price=True, title=title, start_index=offset + 1)
+            await safe_edit(event, text, buttons=cheapdet_nav_buttons(key, day, offset, len(all_rows)))
             return
         if head == "stats":
             s = stats(conn, day_key=today_day_key())
