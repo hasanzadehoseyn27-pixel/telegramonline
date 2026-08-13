@@ -346,10 +346,34 @@ def format_ad_list(rows, with_price: bool, title: str, start_index: int = 1) -> 
     return title + "\n\n" + ("\n\n" + "-" * 20 + "\n\n").join(blocks)
 
 
+_MAX_WHITELIST_SCAN = 300  # حداکثر تعداد ردیف خام که برای پیدا کردن نتایج لیست‌سفیدی می‌گردیم
+
+
+def _fetch_whitelisted_page(fetch_fn, conn, name: str, limit: int, start_offset: int):
+    """چون بعد از فیلتر لیست سفید ممکنه یه صفحه‌ی خام کامل هیچ نتیجه‌ی
+    معتبری نداشته باشه (مثلاً «پراید» که اکثرش کارکرده‌ی معمولیه، نه
+    ۱۵۱ GX)، تا وقتی به‌اندازه‌ی کافی نتیجه‌ی match‌شده پیدا نکنیم (یا به
+    سقف اسکن برسیم) صفحه‌ی بعدی خام رو هم می‌گیریم."""
+    collected: list = []
+    raw_offset = start_offset
+    scanned = 0
+    while len(collected) < limit and scanned < _MAX_WHITELIST_SCAN:
+        batch = fetch_fn(conn, name, limit=PAGE_SIZE, offset=raw_offset)
+        if not batch:
+            break
+        scanned += len(batch)
+        raw_offset += len(batch)
+        collected.extend(
+            r for r in batch if match_zero_whitelist(r["vehicle_name"], r["trim"])
+        )
+        if len(batch) < PAGE_SIZE:
+            break
+    return collected[:limit]
+
+
 async def send_priced_tab(event, conn, kind: str, ref: int, name: str, offset: int = 0) -> None:
     counts = count_search_results(conn, name)
-    rows = search_priced_ads(conn, name, limit=PAGE_SIZE, offset=offset)
-    rows = [r for r in rows if match_zero_whitelist(r["vehicle_name"], r["trim"])]
+    rows = _fetch_whitelisted_page(search_priced_ads, conn, name, PAGE_SIZE, offset)
     text = format_ad_list(rows, with_price=True, title=f"💰 «{name}» — ارزان به گران، از مورد {offset + 1}", start_index=offset + 1)
     for part in split_messages(text):
         await event.respond(part)
@@ -358,8 +382,7 @@ async def send_priced_tab(event, conn, kind: str, ref: int, name: str, offset: i
 
 async def send_unpriced_tab(event, conn, kind: str, ref: int, name: str, offset: int) -> None:
     counts = count_search_results(conn, name)
-    rows = search_unpriced_ads(conn, name, limit=PAGE_SIZE, offset=offset)
-    rows = [r for r in rows if match_zero_whitelist(r["vehicle_name"], r["trim"])]
+    rows = _fetch_whitelisted_page(search_unpriced_ads, conn, name, PAGE_SIZE, offset)
     text = format_ad_list(rows, with_price=False, title=f"❓ بدون قیمت «{name}» — از مورد {offset + 1}", start_index=offset + 1)
     for part in split_messages(text):
         await event.respond(part)
@@ -368,8 +391,7 @@ async def send_unpriced_tab(event, conn, kind: str, ref: int, name: str, offset:
 
 async def send_today_tab(event, conn, kind: str, ref: int, name: str, offset: int) -> None:
     counts = count_search_results(conn, name)
-    rows = search_today_ads(conn, name, limit=PAGE_SIZE, offset=offset)
-    rows = [r for r in rows if match_zero_whitelist(r["vehicle_name"], r["trim"])]
+    rows = _fetch_whitelisted_page(search_today_ads, conn, name, PAGE_SIZE, offset)
     note = "" if rows or counts["today"] else " (این تب فقط پیام‌های زنده از الان به بعد را نشان می‌دهد)"
     text = format_ad_list(rows, with_price=True, title=f"📅 آگهی‌های امروز «{name}» — از مورد {offset + 1}{note}", start_index=offset + 1)
     for part in split_messages(text):
