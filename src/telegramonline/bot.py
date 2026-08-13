@@ -45,15 +45,8 @@ PAGE_SIZE = 10
 WELCOME = """
 🚗 telegramonline آماده است.
 
-▫️ اسم هر ماشینی را تایپ کن تا همین الان جست‌وجو شود.
-▫️ یا از «➕ افزودن ماشین» به لیست خودت اضافه کن تا همیشه با یک دکمه جست‌وجو شود.
-▫️ از «📡 کانال‌ها» می‌توانی کانال‌های عمومی جدید برای پیمایش اضافه کنی.
-
-نتیجه‌ها در چهار تب می‌آیند:
-💰 ۱۰ ارزان‌ترین با قیمت
-❓ بدون قیمت (همه، با صفحه‌بندی)
-📅 همه آگهی‌های امروز (همه، با صفحه‌بندی)
-🙋 خریداران (کسانی که دنبال این ماشین می‌گردند)
+▫️ از «💰 کمترین قیمت‌ها» لیست همه‌ی مدل‌های شناخته‌شده رو با ارزون‌ترین قیمت امروزشون ببین.
+▫️ یا اسم هر ماشینی رو تایپ کن — اگه تو خانواده‌ی «کمترین قیمت‌ها» باشه نشونت می‌دم.
 """.strip()
 
 # کوئری‌های جست‌وجوی آزاد (متنی که کاربر تایپ کرده) — callback تلگرام فقط ۶۴ بایت
@@ -122,11 +115,11 @@ def get_cheapest_whitelisted_models(conn, day_key: str | None = None) -> list[di
 CHEAPEST_PAGE_SIZE = 15
 
 
-def format_cheapest_page(items: list[dict], offset: int) -> str:
+def format_cheapest_page(items: list[dict], offset: int, day_label: str) -> str:
     if not items:
-        return "💰 کمترین قیمت‌ها\n\nهنوز داده‌ای برای امروز نیست."
+        return f"💰 کمترین قیمت‌ها ({day_label})\n\nهنوز داده‌ای برای {day_label} نیست."
     page = items[offset : offset + CHEAPEST_PAGE_SIZE]
-    lines = [f"💰 کمترین قیمت‌ها ({len(items)} مدل) — از مورد {offset + 1}", ""]
+    lines = [f"💰 کمترین قیمت‌ها — {day_label} ({len(items)} مدل) — از مورد {offset + 1}", ""]
     for i, item in enumerate(page, start=offset + 1):
         lines.append(
             f"{i}. {item['title']}\n   از {format_price(item['min_price'])} — {item['count']} آگهی"
@@ -134,24 +127,24 @@ def format_cheapest_page(items: list[dict], offset: int) -> str:
     return "\n".join(lines)
 
 
-def cheapest_nav_buttons(offset: int, total: int) -> list[list[Button]]:
+def cheapest_nav_buttons(offset: int, total: int, day: str) -> list[list[Button]]:
     nav = []
     if offset > 0:
-        nav.append(Button.inline("⬅️ قبلی", f"cheapest:{max(0, offset - CHEAPEST_PAGE_SIZE)}".encode()))
+        nav.append(Button.inline("⬅️ قبلی", f"cheapest:{max(0, offset - CHEAPEST_PAGE_SIZE)}:{day}".encode()))
     if offset + CHEAPEST_PAGE_SIZE < total:
-        nav.append(Button.inline("بعدی ➡️", f"cheapest:{offset + CHEAPEST_PAGE_SIZE}".encode()))
+        nav.append(Button.inline("بعدی ➡️", f"cheapest:{offset + CHEAPEST_PAGE_SIZE}:{day}".encode()))
     rows = [nav] if nav else []
+    other_day = "yesterday" if day == "today" else "today"
+    other_label = "📅 دیروز" if day == "today" else "📅 امروز"
+    rows.append([Button.inline(other_label, f"cheapest:0:{other_day}".encode())])
     rows.append([Button.inline("🏠 صفحه اصلی", b"home")])
     return rows
 
 
 def main_buttons() -> list[list[Button]]:
     return [
-        [Button.inline("💰 کمترین قیمت‌ها", b"cheapest:0")],
-        [Button.inline("🚘 لیست ماشین‌های من", b"myveh")],
-        [Button.inline("➕ افزودن ماشین", b"addveh"), Button.inline("🗑 حذف ماشین", b"delmenu")],
+        [Button.inline("💰 کمترین قیمت‌ها", b"cheapest:0:today")],
         [Button.inline("📡 کانال‌ها", b"chlist"), Button.inline("📊 آمار دیتابیس", b"stats")],
-        [Button.inline("📥 گزارش امروز", b"report:today"), Button.inline("📥 گزارش دیروز", b"report:yesterday")],
         [Button.inline("🏠 صفحه اصلی", b"home")],
     ]
 
@@ -581,8 +574,27 @@ async def run_bot() -> None:
                     buttons=channel_buttons(conn),
                 )
             return
-        token = _cache_query(text)
-        await send_priced_tab(event, conn, "q", token, text)
+        key = match_zero_whitelist(text, None)
+        if key is None:
+            await event.respond(
+                "🚫 ماشین شما به لیست «کمترین قیمت‌ها» اضافه نشده است.",
+                buttons=[[Button.inline("💰 کمترین قیمت‌ها", b"cheapest:0:today")]],
+            )
+            return
+
+        items = get_cheapest_whitelisted_models(conn, day_key=today_day_key())
+        match = next((it for it in items if it["key"] == key), None)
+        if match is None:
+            await event.respond(
+                "🚫 ماشین شما تو خانواده‌ی «کمترین قیمت‌ها» هست، ولی امروز آگهی قیمت‌داری ازش پیدا نشد.",
+                buttons=[[Button.inline("💰 کمترین قیمت‌ها", b"cheapest:0:today")]],
+            )
+            return
+
+        await event.respond(
+            f"💰 {match['title']}\n\nاز {format_price(match['min_price'])} — {match['count']} آگهی امروز",
+            buttons=[[Button.inline("💰 کمترین قیمت‌ها (همه)", b"cheapest:0:today")]],
+        )
 
     @client.on(events.CallbackQuery)
     async def callback(event) -> None:
@@ -598,22 +610,24 @@ async def run_bot() -> None:
             return
         if head == "cheapest":
             offset = int(parts[1]) if len(parts) > 1 else 0
-            items = get_cheapest_whitelisted_models(conn)
-            text = format_cheapest_page(items, offset)
-            await safe_edit(event, text, buttons=cheapest_nav_buttons(offset, len(items)))
+            day = parts[2] if len(parts) > 2 else "today"
+            day_key = today_day_key() if day == "today" else yesterday_day_key()
+            day_label = "امروز" if day == "today" else "دیروز"
+            items = get_cheapest_whitelisted_models(conn, day_key=day_key)
+            text = format_cheapest_page(items, offset, day_label)
+            await safe_edit(event, text, buttons=cheapest_nav_buttons(offset, len(items), day))
             return
         if head == "stats":
-            s = stats(conn)
+            s = stats(conn, day_key=today_day_key())
             text = (
-                "📊 آمار دیتابیس\n\n"
+                "📊 آمار دیتابیس (فقط امروز)\n\n"
                 f"کل پیام‌ها: {s['total']}\n"
                 f"آگهی فروش: {s['sale']}\n"
                 f"با قیمت: {s['with_price']}\n"
                 f"بدون قیمت: {s['without_price']}\n"
                 f"جمع‌شده زنده از گروه: {s['live_collected']}\n"
                 f"خریدار: {s['buyer']}\n"
-                f"تبلیغ/نامعتبر: {s['spam']}\n"
-                f"ماشین‌های ذخیره‌شده: {s['saved_vehicles']}"
+                f"تبلیغ/نامعتبر: {s['spam']}"
             )
             await safe_edit(event, text, buttons=main_buttons())
             return

@@ -2420,9 +2420,11 @@ def lowest_by_vehicle(
     ).fetchall()
 
 
-def stats(conn: sqlite3.Connection) -> dict[str, int]:
+def stats(conn: sqlite3.Connection, day_key: str | None = None) -> dict[str, int]:
+    where = "WHERE day_key = ?" if day_key else ""
+    params = (day_key,) if day_key else ()
     row = conn.execute(
-        """
+        f"""
         SELECT
             COUNT(*) AS total,
             SUM(CASE WHEN status = 'sale' THEN 1 ELSE 0 END) AS sale,
@@ -2432,7 +2434,9 @@ def stats(conn: sqlite3.Connection) -> dict[str, int]:
             SUM(CASE WHEN status = 'buyer' THEN 1 ELSE 0 END) AS buyer,
             SUM(CASE WHEN source = 'live' THEN 1 ELSE 0 END) AS live_collected
         FROM ads
-        """
+        {where}
+        """,
+        params,
     ).fetchone()
     result = {key: int(row[key] or 0) for key in row.keys()}
     result["saved_vehicles"] = int(
