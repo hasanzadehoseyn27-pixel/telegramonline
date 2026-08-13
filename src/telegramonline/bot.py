@@ -82,8 +82,72 @@ def message_link(row) -> str | None:
     return None
 
 
+def get_cheapest_whitelisted_models(conn, day_key: str | None = None) -> list[dict]:
+    """کمترین قیمت هر مدلِ لیست‌سفیدی برای یه روز — دقیقاً همون منطقی که
+    بریج CarX (کیوان‌خودرو) استفاده می‌کنه، تا نتایج این‌جا و سایت یکی باشه."""
+    day_key = day_key or today_day_key()
+    rows = conn.execute(
+        "SELECT * FROM ads WHERE status = 'sale' AND price_million IS NOT NULL AND day_key = ?",
+        (day_key,),
+    ).fetchall()
+
+    groups: dict[str, dict] = {}
+    for row in rows:
+        key = match_zero_whitelist(row["vehicle_name"], row["trim"])
+        if key is None:
+            continue
+        price = row["price_million"]
+        g = groups.get(key)
+        if g is None:
+            groups[key] = {"min_price": price, "sample": row, "count": 1}
+        else:
+            g["count"] += 1
+            if price < g["min_price"]:
+                g["min_price"] = price
+                g["sample"] = row
+
+    result = [
+        {
+            "key": key,
+            "title": build_clean_title(g["sample"]["vehicle_name"], g["sample"]["trim"]),
+            "min_price": g["min_price"],
+            "count": g["count"],
+        }
+        for key, g in groups.items()
+    ]
+    result.sort(key=lambda x: x["title"])
+    return result
+
+
+CHEAPEST_PAGE_SIZE = 15
+
+
+def format_cheapest_page(items: list[dict], offset: int) -> str:
+    if not items:
+        return "💰 کمترین قیمت‌ها\n\nهنوز داده‌ای برای امروز نیست."
+    page = items[offset : offset + CHEAPEST_PAGE_SIZE]
+    lines = [f"💰 کمترین قیمت‌ها ({len(items)} مدل) — از مورد {offset + 1}", ""]
+    for i, item in enumerate(page, start=offset + 1):
+        lines.append(
+            f"{i}. {item['title']}\n   از {format_price(item['min_price'])} — {item['count']} آگهی"
+        )
+    return "\n".join(lines)
+
+
+def cheapest_nav_buttons(offset: int, total: int) -> list[list[Button]]:
+    nav = []
+    if offset > 0:
+        nav.append(Button.inline("⬅️ قبلی", f"cheapest:{max(0, offset - CHEAPEST_PAGE_SIZE)}".encode()))
+    if offset + CHEAPEST_PAGE_SIZE < total:
+        nav.append(Button.inline("بعدی ➡️", f"cheapest:{offset + CHEAPEST_PAGE_SIZE}".encode()))
+    rows = [nav] if nav else []
+    rows.append([Button.inline("🏠 صفحه اصلی", b"home")])
+    return rows
+
+
 def main_buttons() -> list[list[Button]]:
     return [
+        [Button.inline("💰 کمترین قیمت‌ها", b"cheapest:0")],
         [Button.inline("🚘 لیست ماشین‌های من", b"myveh")],
         [Button.inline("➕ افزودن ماشین", b"addveh"), Button.inline("🗑 حذف ماشین", b"delmenu")],
         [Button.inline("📡 کانال‌ها", b"chlist"), Button.inline("📊 آمار دیتابیس", b"stats")],
@@ -531,6 +595,12 @@ async def run_bot() -> None:
             _pending_add_channel.discard(event.sender_id)
             _pending_remove_channel.discard(event.sender_id)
             await safe_edit(event, WELCOME, buttons=main_buttons())
+            return
+        if head == "cheapest":
+            offset = int(parts[1]) if len(parts) > 1 else 0
+            items = get_cheapest_whitelisted_models(conn)
+            text = format_cheapest_page(items, offset)
+            await safe_edit(event, text, buttons=cheapest_nav_buttons(offset, len(items)))
             return
         if head == "stats":
             s = stats(conn)
