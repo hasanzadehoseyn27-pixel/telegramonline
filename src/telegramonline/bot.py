@@ -15,6 +15,7 @@ from telethon.errors import MessageNotModifiedError
 from .config import Settings
 from .net import parse_proxy_from_env
 from .query import format_price
+from .zero_whitelist import match_zero_whitelist
 from .storage import (
     add_channel,
     add_user_vehicle,
@@ -230,8 +231,52 @@ def fire_count(raw_text: str) -> int:
     return raw_text.count("🔥")
 
 
+_PERSIAN_DIGITS_FOR_DEDUP = "۰۱۲۳۴۵۶۷۸۹"
+
+
+def _normalize_for_dedup(word: str) -> str:
+    out = []
+    for ch in word:
+        idx = _PERSIAN_DIGITS_FOR_DEDUP.find(ch)
+        out.append(str(idx) if idx >= 0 else ch.lower())
+    return "".join(out)
+
+
+def build_clean_title(vehicle_name: str | None, trim: str | None) -> str:
+    """همون منطق پاک‌سازی عنوان تو کیوان‌خودرو (BuildCleanTitle تو C#) —
+    کلمه‌ی «خودرو» رو هرجا باشه حذف می‌کنه، کلمات دقیقاً تکراری رو حذف
+    می‌کنه، و شبه‌تکرارهای چسبیده (مثل «هایما S5 هایماs5») رو هم می‌گیره."""
+    parts = [p for p in [vehicle_name, trim] if p and p.strip()]
+    words = " ".join(parts).split()
+
+    seen: set[str] = set()
+    running = ""
+    deduped: list[str] = []
+    for word in words:
+        if word == "خودرو":
+            continue
+        normalized = _normalize_for_dedup(word)
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+        if len(normalized) >= 2 and running and (normalized in running or running in normalized):
+            continue
+        deduped.append(word)
+        running += normalized
+
+    result = " ".join(deduped).strip()
+    return result or "خودرو"
+
+
 def ad_title(row) -> str:
     """خط اول معنادار متن آگهی به‌عنوان عنوان — تا معلوم باشد کدام ماشین است."""
+    try:
+        clean = build_clean_title(row["vehicle_name"], row["trim"])
+    except (KeyError, IndexError):
+        clean = "خودرو"
+    if clean != "خودرو":
+        return clean if len(clean) <= 70 else clean[:67] + "..."
+
     for line in row["raw_text"].split("\n"):
         stripped = line.strip()
         if stripped and re.search(r"[A-Za-zآ-ی]", stripped):
@@ -304,6 +349,7 @@ def format_ad_list(rows, with_price: bool, title: str, start_index: int = 1) -> 
 async def send_priced_tab(event, conn, kind: str, ref: int, name: str, offset: int = 0) -> None:
     counts = count_search_results(conn, name)
     rows = search_priced_ads(conn, name, limit=PAGE_SIZE, offset=offset)
+    rows = [r for r in rows if match_zero_whitelist(r["vehicle_name"], r["trim"])]
     text = format_ad_list(rows, with_price=True, title=f"💰 «{name}» — ارزان به گران، از مورد {offset + 1}", start_index=offset + 1)
     for part in split_messages(text):
         await event.respond(part)
@@ -313,6 +359,7 @@ async def send_priced_tab(event, conn, kind: str, ref: int, name: str, offset: i
 async def send_unpriced_tab(event, conn, kind: str, ref: int, name: str, offset: int) -> None:
     counts = count_search_results(conn, name)
     rows = search_unpriced_ads(conn, name, limit=PAGE_SIZE, offset=offset)
+    rows = [r for r in rows if match_zero_whitelist(r["vehicle_name"], r["trim"])]
     text = format_ad_list(rows, with_price=False, title=f"❓ بدون قیمت «{name}» — از مورد {offset + 1}", start_index=offset + 1)
     for part in split_messages(text):
         await event.respond(part)
@@ -322,6 +369,7 @@ async def send_unpriced_tab(event, conn, kind: str, ref: int, name: str, offset:
 async def send_today_tab(event, conn, kind: str, ref: int, name: str, offset: int) -> None:
     counts = count_search_results(conn, name)
     rows = search_today_ads(conn, name, limit=PAGE_SIZE, offset=offset)
+    rows = [r for r in rows if match_zero_whitelist(r["vehicle_name"], r["trim"])]
     note = "" if rows or counts["today"] else " (این تب فقط پیام‌های زنده از الان به بعد را نشان می‌دهد)"
     text = format_ad_list(rows, with_price=True, title=f"📅 آگهی‌های امروز «{name}» — از مورد {offset + 1}{note}", start_index=offset + 1)
     for part in split_messages(text):
