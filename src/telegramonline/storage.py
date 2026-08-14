@@ -1768,7 +1768,7 @@ def count_used_ads_for_web(
 ) -> int:
     return _count_ads_for_web(
         conn,
-        ["status = 'sale'", "mileage_km IS NOT NULL"],
+        ["status = 'sale'"],
         day_key,
         apply_whitelist=True,
         query=query,
@@ -2108,7 +2108,6 @@ def list_used_ads_for_web(
 
     filters = [
         "status = 'sale'",
-        "mileage_km IS NOT NULL",
         "day_key = ?",
     ]
 
