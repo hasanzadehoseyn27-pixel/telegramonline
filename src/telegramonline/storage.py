@@ -10,6 +10,7 @@ from typing import Iterable
 from .models import ParsedAd
 from .normalizer import compact_text
 from .parser import known_vehicle_options
+from .zero_whitelist import match_zero_whitelist
 
 
 TABLE_SCHEMA = """
@@ -1672,13 +1673,37 @@ def _build_ads_where(
     return " AND ".join(filters), params
 
 
-def _count_ads_for_web(conn: sqlite3.Connection, base_filters: list[str], day_key: str | None, **kwargs) -> int:
+def _count_ads_for_web(
+    conn: sqlite3.Connection,
+    base_filters: list[str],
+    day_key: str | None,
+    apply_whitelist: bool = False,
+    **kwargs,
+) -> int:
     where, params = _build_ads_where(base_filters, day_key, **kwargs)
-    row = conn.execute(
-        f"SELECT COUNT(DISTINCT dedup_key) AS c FROM ads WHERE {where}",
+
+    if not apply_whitelist:
+        row = conn.execute(
+            f"SELECT COUNT(DISTINCT dedup_key) AS c FROM ads WHERE {where}",
+            params,
+        ).fetchone()
+        return int(row["c"] or 0)
+
+    # لیست سفید یه فیلتر پایتونیه (نه ستون SQL)، پس باید یه ردیف نماینده
+    # به‌ازای هر dedup_key یکتا بگیریم و بعد تو پایتون فیلتر/شمارش کنیم.
+    rows = conn.execute(
+        f"""
+        WITH matched AS (
+            SELECT *,
+                ROW_NUMBER() OVER (PARTITION BY dedup_key ORDER BY id) AS rn
+            FROM ads
+            WHERE {where}
+        )
+        SELECT vehicle_name, trim FROM matched WHERE rn = 1
+        """,
         params,
-    ).fetchone()
-    return int(row["c"] or 0)
+    ).fetchall()
+    return sum(1 for r in rows if match_zero_whitelist(r["vehicle_name"], r["trim"]))
 
 
 def count_priced_ads_for_web(
@@ -1697,6 +1722,7 @@ def count_priced_ads_for_web(
         conn,
         ["status = 'sale'", "price_million IS NOT NULL"],
         day_key,
+        apply_whitelist=True,
         query=query,
         vehicle_keys=vehicle_keys,
         years=years,
@@ -1720,6 +1746,7 @@ def count_unpriced_ads_for_web(
         conn,
         ["status = 'sale'", "price_million IS NULL"],
         day_key,
+        apply_whitelist=True,
         query=query,
         vehicle_keys=vehicle_keys,
         years=years,
@@ -1743,6 +1770,7 @@ def count_used_ads_for_web(
         conn,
         ["status = 'sale'", "mileage_km IS NOT NULL"],
         day_key,
+        apply_whitelist=True,
         query=query,
         vehicle_keys=vehicle_keys,
         years=years,
@@ -1949,9 +1977,12 @@ def list_priced_ads_for_web(
     order_by = sort_sql_by_name.get(sort, sort_sql_by_name["newest"])
 
     where = " AND ".join(filters)
-    params.extend([limit, offset])
+    max_scan = 500  # چون فیلتر لیست‌سفید پایتونیه نه SQL، برای پیدا کردن
+    # «limit» تا نتیجه‌ی match‌شده، ممکنه لازم باشه بیشتر از خودِ limit رو
+    # از پایگاه‌داده بخونیم و تو پایتون فیلتر کنیم.
+    scan_params = params + [max_scan, offset]
 
-    return conn.execute(
+    raw_rows = conn.execute(
         f"""
         WITH matched AS (
             SELECT *,
@@ -1967,8 +1998,11 @@ def list_priced_ads_for_web(
         ORDER BY {order_by}
         LIMIT ? OFFSET ?
         """,
-        params,
+        scan_params,
     ).fetchall()
+
+    filtered = [r for r in raw_rows if match_zero_whitelist(r["vehicle_name"], r["trim"])]
+    return filtered[:limit]
 
 def list_unpriced_ads_for_web(
     conn: sqlite3.Connection,
@@ -2027,9 +2061,10 @@ def list_unpriced_ads_for_web(
 
     where = " AND ".join(filters)
 
-    params.extend([limit, offset])
+    max_scan = 500
+    scan_params = params + [max_scan, offset]
 
-    return conn.execute(
+    raw_rows = conn.execute(
         f"""
         WITH matched AS (
             SELECT *,
@@ -2046,8 +2081,11 @@ def list_unpriced_ads_for_web(
         ORDER BY {order_by}
         LIMIT ? OFFSET ?
         """,
-        params,
+        scan_params,
     ).fetchall()
+
+    filtered = [r for r in raw_rows if match_zero_whitelist(r["vehicle_name"], r["trim"])]
+    return filtered[:limit]
 
 def list_used_ads_for_web(
     conn: sqlite3.Connection,
@@ -2130,9 +2168,10 @@ def list_used_ads_for_web(
 
     where = " AND ".join(filters)
 
-    params.extend([limit, offset])
+    max_scan = 500
+    scan_params = params + [max_scan, offset]
 
-    return conn.execute(
+    raw_rows = conn.execute(
         f"""
         WITH matched AS (
             SELECT *,
@@ -2149,8 +2188,11 @@ def list_used_ads_for_web(
         ORDER BY {order_by}
         LIMIT ? OFFSET ?
         """,
-        params,
+        scan_params,
     ).fetchall()
+
+    filtered = [r for r in raw_rows if match_zero_whitelist(r["vehicle_name"], r["trim"])]
+    return filtered[:limit]
 
 def list_buyer_ads_for_web(
     conn: sqlite3.Connection,
