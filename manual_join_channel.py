@@ -36,7 +36,10 @@ async def main(username: str) -> None:
         return
 
     print(f"در حال join شدن به «{username}»...")
-    joined = await join_channel(client, username)
+    joined = await join_channel(client, username, allow_group=False)
+    if joined == "group":
+        print(f"🚫 «{username}» یه گروهه، نه کانال — برنامه کانال‌محوره، اضافه نشد.")
+        return
     if not joined:
         print(f"❌ join نشد.")
         return

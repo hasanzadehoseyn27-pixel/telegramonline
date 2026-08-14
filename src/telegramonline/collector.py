@@ -48,15 +48,23 @@ from .storage import (
 CHANNEL_SYNC_INTERVAL_SECONDS = 30
 
 
-async def join_channel(client: TelegramClient, username: str) -> bool:
+async def join_channel(client: TelegramClient, username: str, allow_group: bool = True) -> bool | str:
     """اکانت شخصی را عضو کانال عمومی می‌کند (لازم برای دریافت پیام‌های زنده).
 
     FloodWaitError عمداً اینجا گرفته نمی‌شود و به بالا پرتاب می‌شود؛ این خطا
     یعنی خودِ تلگرام موقتاً محدودیت گذاشته (نه اینکه یوزرنیم غلط باشه)، پس
     نباید مثل بقیه‌ی خطاها به‌عنوان «یک تلاش ناموفق» حساب بشه.
+
+    allow_group=False یعنی برنامه «کانال‌محور»ه — اگه یوزرنیم داده‌شده در
+    واقع یه گروه/سوپرگروه باشه (نه کانال broadcast)، عضو نمی‌شیم و رشته‌ی
+    "group" برمی‌گردونیم تا فراخوان (caller) بفهمه رد شده، نه واقعاً fail.
     """
     try:
         entity = await client.get_entity(username)
+        if not allow_group:
+            is_group = getattr(entity, "megagroup", False) or type(entity).__name__ == "Chat"
+            if is_group:
+                return "group"
         await client(JoinChannelRequest(entity))
         return True
     except UserAlreadyParticipantError:
@@ -148,7 +156,10 @@ async def add_and_activate_channel(client: TelegramClient, conn, username: str, 
     channel_id = add_channel(conn, username, title=title)
     if channel_id is None:
         return {"status": "duplicate", "username": username}
-    joined = await join_channel(client, username)
+    joined = await join_channel(client, username, allow_group=False)
+    if joined == "group":
+        deactivate_channel(conn, channel_id)
+        return {"status": "rejected_group", "username": username, "channel_id": channel_id}
     if joined:
         real_title = title
         try:
@@ -201,7 +212,7 @@ async def sync_channels(client: TelegramClient, conn) -> set[str]:
         username = channel["username"]
         print(f"🆕 کانال جدید شناسایی شد: {username} — در حال عضویت و بک‌فیل امروز...", flush=True)
         try:
-            joined = await join_channel(client, username)
+            joined = await join_channel(client, username, allow_group=False)
         except FloodWaitError as exc:
             # این محدودیت خودِ تلگرامه، نه اینکه یوزرنیم غلط باشه — پس این
             # تلاش را جزو ۵ تلاش ناموفق حساب نمی‌کنیم. چون این محدودیت روی
@@ -210,6 +221,13 @@ async def sync_channels(client: TelegramClient, conn) -> set[str]:
             # امتحان می‌شود.
             print(
                 f"⏳ محدودیت موقت تلگرام: باید {exc.seconds} ثانیه صبر کرد (کانال {username}). این تلاش شمرده نمی‌شود؛ فعلاً از عضوکردن کانال‌های جدید صرف‌نظر می‌شود تا دور بعد.",
+                flush=True,
+            )
+            break
+        if joined == "group":
+            deactivate_channel(conn, channel["id"])
+            print(
+                f"🚫 {username} یه گروهه، نه کانال — چون برنامه کانال‌محوره، اضافه نشد و غیرفعال شد.",
                 flush=True,
             )
             break
