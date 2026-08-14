@@ -1415,7 +1415,7 @@ def get_filter_options_for_web(
 
     vehicle_rows = conn.execute(
         """
-        SELECT vehicle_key, vehicle_name, COUNT(DISTINCT dedup_key) AS count
+        SELECT vehicle_key, vehicle_name, COUNT(DISTINCT dedup_key || '|' || COALESCE(channel_username, '')) AS count
         FROM ads
         WHERE
             day_key = ?
@@ -1430,7 +1430,7 @@ def get_filter_options_for_web(
 
     year_rows = conn.execute(
         """
-        SELECT year, COUNT(DISTINCT dedup_key) AS count
+        SELECT year, COUNT(DISTINCT dedup_key || '|' || COALESCE(channel_username, '')) AS count
         FROM ads
         WHERE
             day_key = ?
@@ -1444,7 +1444,7 @@ def get_filter_options_for_web(
 
     color_rows = conn.execute(
         """
-        SELECT color, COUNT(DISTINCT dedup_key) AS count
+        SELECT color, COUNT(DISTINCT dedup_key || '|' || COALESCE(channel_username, '')) AS count
         FROM ads
         WHERE
             day_key = ?
@@ -1593,7 +1593,7 @@ def search_priced_ads(
         WITH matched AS (
             SELECT *,
                 ROW_NUMBER() OVER (
-                    PARTITION BY dedup_key
+                    PARTITION BY dedup_key, channel_username
                     ORDER BY price_million ASC, id DESC
                 ) AS rn
             FROM ads
@@ -1684,7 +1684,7 @@ def _count_ads_for_web(
 
     if not apply_whitelist:
         row = conn.execute(
-            f"SELECT COUNT(DISTINCT dedup_key) AS c FROM ads WHERE {where}",
+            f"SELECT COUNT(DISTINCT dedup_key || '|' || COALESCE(channel_username, '')) AS c FROM ads WHERE {where}",
             params,
         ).fetchone()
         return int(row["c"] or 0)
@@ -1695,7 +1695,7 @@ def _count_ads_for_web(
         f"""
         WITH matched AS (
             SELECT *,
-                ROW_NUMBER() OVER (PARTITION BY dedup_key ORDER BY id) AS rn
+                ROW_NUMBER() OVER (PARTITION BY dedup_key, channel_username ORDER BY id) AS rn
             FROM ads
             WHERE {where}
         )
@@ -1855,7 +1855,7 @@ def count_special_ads(conn: sqlite3.Connection, day_key: str | None = None) -> i
     day_key = day_key or today_day_key()
     row = conn.execute(
         f"""
-        SELECT COUNT(DISTINCT dedup_key) AS c
+        SELECT COUNT(DISTINCT dedup_key || '|' || COALESCE(channel_username, '')) AS c
         FROM ads
         WHERE day_key = ? AND status = 'sale' AND price_million IS NOT NULL AND {where}
         """,
@@ -1878,7 +1878,7 @@ def list_special_ads(
     return conn.execute(
         f"""
         WITH ranked AS (
-            SELECT *, ROW_NUMBER() OVER (PARTITION BY dedup_key ORDER BY id DESC) AS rn
+            SELECT *, ROW_NUMBER() OVER (PARTITION BY dedup_key, channel_username ORDER BY id DESC) AS rn
             FROM ads
             WHERE day_key = ? AND status = 'sale' AND price_million IS NOT NULL AND {where}
         )
@@ -1987,7 +1987,7 @@ def list_priced_ads_for_web(
         WITH matched AS (
             SELECT *,
                 ROW_NUMBER() OVER (
-                    PARTITION BY dedup_key
+                    PARTITION BY dedup_key, channel_username
                     ORDER BY {order_by}
                 ) AS rn
             FROM ads
@@ -2069,7 +2069,7 @@ def list_unpriced_ads_for_web(
         WITH matched AS (
             SELECT *,
                 ROW_NUMBER() OVER (
-                    PARTITION BY dedup_key
+                    PARTITION BY dedup_key, channel_username
                     ORDER BY {order_by}
                 ) AS rn
             FROM ads
@@ -2175,7 +2175,7 @@ def list_used_ads_for_web(
         WITH matched AS (
             SELECT *,
                 ROW_NUMBER() OVER (
-                    PARTITION BY dedup_key
+                    PARTITION BY dedup_key, channel_username
                     ORDER BY {order_by}
                 ) AS rn
             FROM ads
@@ -2256,7 +2256,7 @@ def list_buyer_ads_for_web(
         WITH matched AS (
             SELECT *,
                 ROW_NUMBER() OVER (
-                    PARTITION BY dedup_key
+                    PARTITION BY dedup_key, channel_username
                     ORDER BY {order_by}
                 ) AS rn
             FROM ads
@@ -2288,7 +2288,7 @@ def search_unpriced_ads(
         WITH matched AS (
             SELECT *,
                 ROW_NUMBER() OVER (
-                    PARTITION BY dedup_key
+                    PARTITION BY dedup_key, channel_username
                     ORDER BY message_date IS NULL, message_date DESC, id DESC
                 ) AS rn
             FROM ads
@@ -2323,7 +2323,7 @@ def search_today_ads(
         WITH matched AS (
             SELECT *,
                 ROW_NUMBER() OVER (
-                    PARTITION BY dedup_key
+                    PARTITION BY dedup_key, channel_username
                     ORDER BY message_date IS NULL, message_date DESC, id DESC
                 ) AS rn
             FROM ads
@@ -2357,7 +2357,7 @@ def search_buyer_ads(
         WITH matched AS (
             SELECT *,
                 ROW_NUMBER() OVER (
-                    PARTITION BY dedup_key
+                    PARTITION BY dedup_key, channel_username
                     ORDER BY message_date IS NULL, message_date DESC, id DESC
                 ) AS rn
             FROM ads
@@ -2391,7 +2391,7 @@ def count_search_results(conn: sqlite3.Connection, query: str, day_key: str | No
     ).fetchone()
     today_row = conn.execute(
         f"""
-        SELECT COUNT(DISTINCT dedup_key) AS today
+        SELECT COUNT(DISTINCT dedup_key || '|' || COALESCE(channel_username, '')) AS today
         FROM ads
         WHERE status = 'sale' AND day_key = ? AND {like_where}
         """,
@@ -2399,7 +2399,7 @@ def count_search_results(conn: sqlite3.Connection, query: str, day_key: str | No
     ).fetchone()
     buyer_row = conn.execute(
         f"""
-        SELECT COUNT(DISTINCT dedup_key) AS buyers
+        SELECT COUNT(DISTINCT dedup_key || '|' || COALESCE(channel_username, '')) AS buyers
         FROM ads
         WHERE status = 'buyer' AND day_key = ? AND {like_where}
         """,
@@ -2684,7 +2684,7 @@ def list_ads_for_vehicle_key(
     return conn.execute(
         """
         WITH ranked AS (
-            SELECT *, ROW_NUMBER() OVER (PARTITION BY dedup_key ORDER BY id DESC) AS rn
+            SELECT *, ROW_NUMBER() OVER (PARTITION BY dedup_key, channel_username ORDER BY id DESC) AS rn
             FROM ads
             WHERE day_key = ?
               AND status = 'sale'
@@ -2725,7 +2725,7 @@ def get_live_cheapest_vehicles(
                 *,
 
                 ROW_NUMBER() OVER (
-                    PARTITION BY dedup_key
+                    PARTITION BY dedup_key, channel_username
                     ORDER BY id DESC
                 ) AS dedup_rn
 
