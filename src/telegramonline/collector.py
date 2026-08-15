@@ -1,5 +1,16 @@
 from __future__ import annotations
 
+import sys
+
+# رو ویندوز، وقتی این اسکریپت از طریق PM2 (یا هر مدیر پروسه‌ی دیگه‌ای بدون
+# کنسول تعاملی واقعی) اجرا بشه، پایتون پیش‌فرض encoding رو رو cp1252
+# می‌ذاره که فارسی/ایموجی رو نمی‌تونه چاپ کنه و کرش می‌کنه. اینجا صریح و
+# بدون وابستگی به env variable (که موقع ری‌استارت خودکار PM2 گاهی درست
+# اعمال نمی‌شه) UTF-8 رو اجباری می‌کنیم.
+for _stream in (sys.stdout, sys.stderr):
+    if hasattr(_stream, "reconfigure"):
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+
 import argparse
 import asyncio
 import time
