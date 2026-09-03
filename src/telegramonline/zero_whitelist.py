@@ -45,12 +45,12 @@ _WHITELIST: list[tuple[str, list[list[str]], list[str]]] = [
     ("tara_automatic_v4_ef7", [["تارا"], ["ef7", "ای اف سون", "ای اف7", "افسون", "ای اف هفت"]], []),
 
     # ── تارا V4 اتومات TU5 ──
-    ("tara_automatic_v4_tu5", [["v4"]], []),
+    ("tara_automatic_v4_tu5", [["تارا"], ["v4"]], []),
     ("tara_automatic_v4_tu5", [["تارا"], ["اتومات"]], []),
     ("tara_automatic_v4_tu5", [["تارا"], ["وی"], ["4", "چهار"]], []),
 
     # ── تارا V1 دنده ──
-    ("tara_gear_v1", [["v1"]], []),
+    ("tara_gear_v1", [["تارا"], ["v1"]], []),
     ("tara_gear_v1", [["تارا"], ["دنده"]], []),
     ("tara_gear_v1", [["تارا"], ["وی"], ["1", "یک"]], []),
 
@@ -78,7 +78,12 @@ def match_zero_whitelist(vehicle_name: str | None, trim: str | None, raw_text: s
     خیلی کوچیکه (فقط تارا + رانا)، ریسک تداخل کاذب هم پایینه.
     """
 
-    combined = " ".join(x for x in [vehicle_name, trim, raw_text] if x)
+    # پیام‌های خیلی طولانی معمولاً لیست‌قیمتِ ده‌ها ماشین مختلفن — چک کردن
+    # raw_text توشون خطرناکه (مثلاً «پانا» می‌تونه برای یه ماشین دیگه باشه،
+    # نه «رانا»یی که تو همون پیام اومده). فقط پیام‌های کوتاه (یه آگهی تکی)
+    # از raw_text استفاده می‌کنن.
+    safe_raw_text = raw_text if raw_text and len(raw_text) <= 400 else None
+    combined = " ".join(x for x in [vehicle_name, trim, safe_raw_text] if x)
     if not combined.strip():
         return None
 
