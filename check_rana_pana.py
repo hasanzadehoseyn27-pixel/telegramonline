@@ -1,0 +1,17 @@
+import sys
+sys.path.insert(0, "src")
+
+from telegramonline.storage import connect
+from telegramonline.config import Settings
+
+settings = Settings.from_env()
+conn = connect(settings.database_path)
+cur = conn.execute(
+    "SELECT vehicle_name, trim, raw_text FROM ads "
+    "WHERE (vehicle_name LIKE '%پانا%' OR trim LIKE '%پانا%' OR raw_text LIKE '%پانا%' "
+    "OR vehicle_name LIKE '%پانوراما%' OR raw_text LIKE '%پانوراما%') "
+    "AND (vehicle_name LIKE '%رانا%' OR raw_text LIKE '%رانا%') "
+    "ORDER BY id DESC LIMIT 15"
+)
+for row in cur.fetchall():
+    print(tuple(row))
