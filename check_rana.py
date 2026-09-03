@@ -12,4 +12,4 @@ cur = conn.execute(
     "ORDER BY id DESC LIMIT 15"
 )
 for row in cur.fetchall():
-    print(repr(row))
+    print(tuple(row))
