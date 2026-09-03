@@ -13,5 +13,9 @@ cur = conn.execute(
     "AND (vehicle_name LIKE '%رانا%' OR raw_text LIKE '%رانا%') "
     "ORDER BY id DESC LIMIT 15"
 )
-for row in cur.fetchall():
-    print(tuple(row))
+import io
+
+with io.open("rana_pana_results.txt", "w", encoding="utf-8") as f:
+    for row in cur.fetchall():
+        f.write(str(tuple(row)) + "\n")
+print("done, check rana_pana_results.txt")
