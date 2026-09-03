@@ -69,11 +69,16 @@ _WHITELIST: list[tuple[str, list[list[str]], list[str]]] = [
 
 
 def match_zero_whitelist(vehicle_name: str | None, trim: str | None, raw_text: str | None = None) -> str | None:
-    """اگه اسم/تریمِ از قبل تشخیص‌داده‌شده با یکی از مدل‌های «صفر»ِ لیست
-    سفید match بشه، کلید کانونیکش رو برمی‌گردونه؛ وگرنه None.
+    """اگه اسم/تریم/متنِ خامِ پیام با یکی از مدل‌های «صفر»ِ لیست سفید match
+    بشه، کلید کانونیکش رو برمی‌گردونه؛ وگرنه None.
+
+    ⚠️ raw_text رو هم چک می‌کنیم — چون خیلی از فروشنده‌ها کلمه‌ی تشخیص‌دهنده
+    (مثل «کاسه»/«دیسک») رو تو خط جدا می‌نویسن، نه تو همون بخش کوتاهی که
+    پارسر به‌عنوان «اسم خودرو» جدا می‌کنه. با توجه به اینکه لیست‌سفید الان
+    خیلی کوچیکه (فقط تارا + رانا)، ریسک تداخل کاذب هم پایینه.
     """
 
-    combined = " ".join(x for x in [vehicle_name, trim] if x)
+    combined = " ".join(x for x in [vehicle_name, trim, raw_text] if x)
     if not combined.strip():
         return None
 
