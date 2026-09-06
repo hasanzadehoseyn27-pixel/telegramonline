@@ -25,6 +25,7 @@ class Settings:
     group: str
     database_path: Path
     export_path: Path
+    forward_target_group: str
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -42,5 +43,9 @@ class Settings:
             group=os.getenv("TELEGRAM_GROUP", "").strip(),
             database_path=Path(os.getenv("DATABASE_PATH", "data/telegramonline.sqlite3")),
             export_path=Path(os.getenv("EXPORT_PATH", "")),
+            # هر آگهی معتبری که به سایت پوش می‌شه، عین همون پیام تلگرام
+            # (فوروارد) به این گروه هم فرستاده می‌شه. اگه خالی باشه، این
+            # فیچر کلاً غیرفعاله.
+            forward_target_group=os.getenv("FORWARD_TARGET_GROUP", "").strip(),
         )
 

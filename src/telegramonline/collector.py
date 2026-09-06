@@ -449,7 +449,7 @@ async def live_collect() -> None:
         # کل بدنه را توی try/except می‌گذاریم و هر خطا را با traceback کامل
         # چاپ می‌کنیم، تا اگه دوباره پیش بیاد بلافاصله دیده شود.
         try:
-            await _handle_new_message(event, client, conn, known, known_groups)
+            await _handle_new_message(event, client, conn, known, known_groups, settings.forward_target_group)
         except Exception:  # noqa: BLE001
             print("❌ خطای غیرمنتظره در پردازش یک پیام زنده:", flush=True)
             traceback.print_exc()
@@ -465,7 +465,7 @@ async def live_collect() -> None:
     await client.run_until_disconnected()
 
 
-async def _handle_new_message(event, client, conn, known: set[str], known_groups: set[str]) -> None:
+async def _handle_new_message(event, client, conn, known: set[str], known_groups: set[str], forward_target_group: str = "") -> None:
     chat = await event.get_chat()
     username = getattr(chat, "username", None)
     if username and username in known_groups:
@@ -504,6 +504,13 @@ async def _handle_new_message(event, client, conn, known: set[str], known_groups
     ]
     if ads_for_carx:
         await push_ads_async(ads_for_carx)
+
+        # ── فوروارد عین پیام به گروه مقصد (اگه تنظیم شده باشه) ──
+        if forward_target_group:
+            try:
+                await client.forward_messages(forward_target_group, event.message)
+            except Exception as exc:  # noqa: BLE001
+                print(f"⚠️ فوروارد به گروه مقصد ناموفق بود: {exc}", flush=True)
 
     triggered_alerts = check_price_alerts(
         conn,
