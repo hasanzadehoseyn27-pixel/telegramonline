@@ -21,6 +21,7 @@ CREATE TABLE IF NOT EXISTS channels (
     active INTEGER NOT NULL DEFAULT 1,
     joined INTEGER NOT NULL DEFAULT 0,
     join_attempts INTEGER NOT NULL DEFAULT 0,
+    account INTEGER NOT NULL DEFAULT 1,
     added_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -32,6 +33,7 @@ CREATE TABLE IF NOT EXISTS source_groups (
     joined INTEGER NOT NULL DEFAULT 0,
     join_attempts INTEGER NOT NULL DEFAULT 0,
     discovered_channels INTEGER NOT NULL DEFAULT 0,
+    account INTEGER NOT NULL DEFAULT 1,
     added_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -279,6 +281,12 @@ def _ensure_columns(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE source_groups ADD COLUMN discovered_channels INTEGER NOT NULL DEFAULT 0")
     if existing_groups_cols and "join_attempts" not in existing_groups_cols:
         conn.execute("ALTER TABLE source_groups ADD COLUMN join_attempts INTEGER NOT NULL DEFAULT 0")
+    # ⚠️ اکانت تلگرامیِ صاحبِ این کانال/گروه — ۱ = شماره‌ی اصلی (0919)،
+    # ۲ = شماره‌ی دوم (0938). همه‌ی رکوردهای قدیمی پیش‌فرض ۱ می‌مونن.
+    if existing_channels_cols and "account" not in existing_channels_cols:
+        conn.execute("ALTER TABLE channels ADD COLUMN account INTEGER NOT NULL DEFAULT 1")
+    if existing_groups_cols and "account" not in existing_groups_cols:
+        conn.execute("ALTER TABLE source_groups ADD COLUMN account INTEGER NOT NULL DEFAULT 1")
     conn.commit()
 
 
@@ -556,10 +564,10 @@ def list_active_joined_source_groups(conn: sqlite3.Connection) -> list[sqlite3.R
     ).fetchall()
 
 
-def mark_source_group_joined(conn: sqlite3.Connection, group_id: int, title: str | None = None) -> None:
+def mark_source_group_joined(conn: sqlite3.Connection, group_id: int, title: str | None = None, account: int = 1) -> None:
     conn.execute(
-        "UPDATE source_groups SET joined = 1, join_attempts = 0, title = COALESCE(?, title) WHERE id = ?",
-        (title, group_id),
+        "UPDATE source_groups SET joined = 1, join_attempts = 0, title = COALESCE(?, title), account = ? WHERE id = ?",
+        (title, account, group_id),
     )
     conn.commit()
 
@@ -666,10 +674,10 @@ def list_active_joined_channels(conn: sqlite3.Connection) -> list[sqlite3.Row]:
     ).fetchall()
 
 
-def mark_channel_joined(conn: sqlite3.Connection, channel_id: int, title: str | None = None) -> None:
+def mark_channel_joined(conn: sqlite3.Connection, channel_id: int, title: str | None = None, account: int = 1) -> None:
     conn.execute(
-        "UPDATE channels SET joined = 1, join_attempts = 0, title = COALESCE(?, title) WHERE id = ?",
-        (title, channel_id),
+        "UPDATE channels SET joined = 1, join_attempts = 0, title = COALESCE(?, title), account = ? WHERE id = ?",
+        (title, account, channel_id),
     )
     conn.commit()
 

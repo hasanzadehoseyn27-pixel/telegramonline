@@ -87,6 +87,33 @@ async def join_channel(client: TelegramClient, username: str, allow_group: bool 
         return False
 
 
+async def join_channel_with_fallback(
+    client2: TelegramClient | None,
+    client1: TelegramClient,
+    username: str,
+    allow_group: bool = True,
+) -> tuple[bool | str, int]:
+    """اول تلاش می‌کنه با اکانت دوم (شماره‌ی جدید) عضو بشه — چون کانال‌های
+    جدید از این به بعد باید رو اون شماره برن. اگه اکانت دوم محدودیت
+    (FloodWaitError) خورده باشه، به‌جای هدررفتن این کانال، فوراً با اکانت
+    اول (شماره‌ی قدیمی) امتحان می‌کنه.
+
+    برمی‌گردونه: (نتیجه‌ی join_channel، شماره‌ی اکانتی که موفق شد یا آخرین
+    اکانتی که امتحان شد).
+    """
+    if client2 is not None:
+        try:
+            result = await join_channel(client2, username, allow_group=allow_group)
+            return result, 2
+        except FloodWaitError as exc:
+            print(
+                f"⏳ اکانت دوم محدودیت خورده ({exc.seconds} ثانیه) — کانال {username} رو با اکانت اول امتحان می‌کنیم.",
+                flush=True,
+            )
+    result = await join_channel(client1, username, allow_group=allow_group)
+    return result, 1
+
+
 async def leave_channel(client: TelegramClient, username: str) -> bool:
     """اکانت شخصی را از عضویت کانال خارج می‌کند (وقتی کاربر کانال را حذف می‌کند)."""
     try:
@@ -157,7 +184,9 @@ async def backfill_today(
     return inserted
 
 
-async def add_and_activate_channel(client: TelegramClient, conn, username: str, title: str | None = None) -> dict:
+async def add_and_activate_channel(
+    client: TelegramClient, conn, username: str, title: str | None = None, client2: TelegramClient | None = None
+) -> dict:
     """کانال جدید را ثبت، عضو می‌شود، و پیام‌های همان روز را می‌خواند.
 
     این تابع را هم CLI و هم (در آینده) بات صدا می‌زند؛ چون فقط دیتابیس را
@@ -167,19 +196,20 @@ async def add_and_activate_channel(client: TelegramClient, conn, username: str, 
     channel_id = add_channel(conn, username, title=title)
     if channel_id is None:
         return {"status": "duplicate", "username": username}
-    joined = await join_channel(client, username, allow_group=False)
+    joined, used_account = await join_channel_with_fallback(client2, client, username, allow_group=False)
     if joined == "group":
         deactivate_channel(conn, channel_id)
         return {"status": "rejected_group", "username": username, "channel_id": channel_id}
+    joining_client = client2 if used_account == 2 and client2 is not None else client
     if joined:
         real_title = title
         try:
-            entity = await client.get_entity(username)
+            entity = await joining_client.get_entity(username)
             real_title = getattr(entity, "title", None) or title
         except Exception:  # noqa: BLE001
             pass
-        mark_channel_joined(conn, channel_id, title=real_title)
-    inserted = await backfill_today(client, conn, channel_id, username) if joined else 0
+        mark_channel_joined(conn, channel_id, title=real_title, account=used_account)
+    inserted = await backfill_today(joining_client, conn, channel_id, username) if joined else 0
     return {"status": "ok", "channel_id": channel_id, "joined": joined, "inserted_today": inserted}
 
 
@@ -204,7 +234,7 @@ def _may_attempt_join_now() -> bool:
     return True
 
 
-async def sync_channels(client: TelegramClient, conn) -> set[str]:
+async def sync_channels(client: TelegramClient, conn, client2: TelegramClient | None = None) -> set[str]:
     """کانال‌های ثبت‌شده‌ی هنوز-عضونشده را عضو و بک‌فیل امروز می‌کند.
 
     وضعیت «عضو شده یا نه» مستقیم از ستون channels.joined خوانده می‌شود (نه یک
@@ -223,7 +253,7 @@ async def sync_channels(client: TelegramClient, conn) -> set[str]:
         username = channel["username"]
         print(f"🆕 کانال جدید شناسایی شد: {username} — در حال عضویت و بک‌فیل امروز...", flush=True)
         try:
-            joined = await join_channel(client, username, allow_group=False)
+            joined, used_account = await join_channel_with_fallback(client2, client, username, allow_group=False)
         except FloodWaitError as exc:
             # این محدودیت خودِ تلگرامه، نه اینکه یوزرنیم غلط باشه — پس این
             # تلاش را جزو ۵ تلاش ناموفق حساب نمی‌کنیم. چون این محدودیت روی
@@ -257,14 +287,15 @@ async def sync_channels(client: TelegramClient, conn) -> set[str]:
                 )
             break
         title = channel["title"]
+        joining_client = client2 if used_account == 2 and client2 is not None else client
         try:
-            entity = await client.get_entity(username)
+            entity = await joining_client.get_entity(username)
             title = getattr(entity, "title", None) or title
         except Exception:  # noqa: BLE001
             pass
-        mark_channel_joined(conn, channel["id"], title=title)
-        inserted = await backfill_today(client, conn, channel["id"], username)
-        print(f"✅ کانال {username} فعال شد ({inserted} پیام امروز).", flush=True)
+        mark_channel_joined(conn, channel["id"], title=title, account=used_account)
+        inserted = await backfill_today(joining_client, conn, channel["id"], username)
+        print(f"✅ کانال {username} فعال شد ({inserted} پیام امروز، اکانت {used_account}).", flush=True)
         break
 
     for channel in list_channels_pending_leave(conn):
@@ -281,14 +312,14 @@ async def sync_channels(client: TelegramClient, conn) -> set[str]:
     return {c["username"] for c in list_active_joined_channels(conn)}
 
 
-async def sync_source_groups(client: TelegramClient, conn) -> set[str]:
+async def sync_source_groups(client: TelegramClient, conn, client2: TelegramClient | None = None) -> set[str]:
     for group in list_unjoined_source_groups(conn):
         if not _may_attempt_join_now():
             break
         username = group["username"]
         print(f"source group discovered: {username}; joining...", flush=True)
         try:
-            joined = await join_channel(client, username)
+            joined, used_account = await join_channel_with_fallback(client2, client, username)
         except FloodWaitError as exc:
             print(
                 f"⏳ محدودیت موقت تلگرام: باید {exc.seconds} ثانیه صبر کرد (گروه {username}). این تلاش شمرده نمی‌شود.",
@@ -307,13 +338,14 @@ async def sync_source_groups(client: TelegramClient, conn) -> set[str]:
                 print(f"source group join failed: {username} (attempt {attempts}/{MAX_JOIN_ATTEMPTS})", flush=True)
             break
         title = group["title"]
+        joining_client = client2 if used_account == 2 and client2 is not None else client
         try:
-            entity = await client.get_entity(username)
+            entity = await joining_client.get_entity(username)
             title = getattr(entity, "title", None) or title
         except Exception:  # noqa: BLE001
             pass
-        mark_source_group_joined(conn, group["id"], title=title)
-        print(f"source group is active: {username}", flush=True)
+        mark_source_group_joined(conn, group["id"], title=title, account=used_account)
+        print(f"source group is active: {username} (اکانت {used_account})", flush=True)
         break
 
     for group in list_source_groups_pending_leave(conn):
@@ -328,22 +360,22 @@ async def sync_source_groups(client: TelegramClient, conn) -> set[str]:
     return {g["username"] for g in list_active_joined_source_groups(conn)}
 
 
-async def channel_sync_loop(client: TelegramClient, conn, known: set[str]) -> None:
+async def channel_sync_loop(client: TelegramClient, conn, known: set[str], client2: TelegramClient | None = None) -> None:
     while True:
         await asyncio.sleep(CHANNEL_SYNC_INTERVAL_SECONDS)
         try:
-            updated = await sync_channels(client, conn)
+            updated = await sync_channels(client, conn, client2=client2)
             known.clear()
             known.update(updated)
         except Exception as exc:  # noqa: BLE001
             print(f"⚠️ خطا در بررسی کانال‌های جدید: {exc}", flush=True)
 
 
-async def source_group_sync_loop(client: TelegramClient, conn, known_groups: set[str]) -> None:
+async def source_group_sync_loop(client: TelegramClient, conn, known_groups: set[str], client2: TelegramClient | None = None) -> None:
     while True:
         await asyncio.sleep(CHANNEL_SYNC_INTERVAL_SECONDS)
         try:
-            updated = await sync_source_groups(client, conn)
+            updated = await sync_source_groups(client, conn, client2=client2)
             known_groups.clear()
             known_groups.update(updated)
         except Exception as exc:  # noqa: BLE001
@@ -356,6 +388,7 @@ async def discover_forwarded_channel_from_group(
     known_channels: set[str],
     group_username: str,
     message,
+    client2: TelegramClient | None = None,
 ) -> None:
     origin_username, origin_title = await forwarded_channel_origin(client, message)
     if not origin_username or origin_username in known_channels:
@@ -377,7 +410,7 @@ async def discover_forwarded_channel_from_group(
         return
 
     try:
-        joined = await join_channel(client, origin_username)
+        joined, used_account = await join_channel_with_fallback(client2, client, origin_username)
     except FloodWaitError as exc:
         print(
             f"⏳ محدودیت موقت تلگرام هنگام join سریع {origin_username} ({exc.seconds} ثانیه). چون قبلاً ثبت شده، sync_channels دور بعد دوباره امتحان می‌کند.",
@@ -386,10 +419,11 @@ async def discover_forwarded_channel_from_group(
         return
     if not joined:
         return
-    mark_channel_joined(conn, channel_id, title=origin_title)
+    joining_client = client2 if used_account == 2 and client2 is not None else client
+    mark_channel_joined(conn, channel_id, title=origin_title, account=used_account)
     known_channels.add(origin_username)
-    inserted = await backfill_today(client, conn, channel_id, origin_username)
-    print(f"forwarded channel activated: {origin_username}, inserted_today={inserted}", flush=True)
+    inserted = await backfill_today(joining_client, conn, channel_id, origin_username)
+    print(f"forwarded channel activated: {origin_username}, inserted_today={inserted}, account={used_account}", flush=True)
 
 
 TEHRAN_OFFSET = timedelta(hours=3, minutes=30)
@@ -432,16 +466,45 @@ async def live_collect() -> None:
         auto_reconnect=True,
     )
     await client.start()
+
+    # ⚠️ اکانت دوم (شماره‌ی جدید) — کانال‌های تازه‌کشف‌شده از این به بعد اول
+    # با این اکانت Join می‌شن (تا فشار رو اکانت اول کم بشه)؛ اگه این اکانت
+    # محدودیت (FloodWaitError) بخوره، به‌صورت خودکار برمی‌گرده رو اکانت اول.
+    # اگه Session این اکانت هنوز ساخته نشده باشه، کل این فیچر بی‌صدا
+    # غیرفعال می‌مونه و رفتار قبلی (فقط یک اکانت) ادامه پیدا می‌کنه.
+    client2: TelegramClient | None = None
+    try:
+        candidate = TelegramClient(
+            "telegramonline_user_2",
+            settings.api_id,
+            settings.api_hash,
+            proxy=proxy,
+            connection_retries=None,
+            retry_delay=2,
+            auto_reconnect=True,
+        )
+        await candidate.start()
+        me2 = await candidate.get_me()
+        client2 = candidate
+        print(f"📱 اکانت دوم متصل شد: {me2.phone} (@{me2.username}) — کانال‌های جدید اول رو این می‌رن.", flush=True)
+        if settings.forward_target_group:
+            try:
+                await join_channel(client2, settings.forward_target_group)
+            except Exception:  # noqa: BLE001
+                pass
+    except Exception as exc:  # noqa: BLE001
+        print(f"⚠️ اکانت دوم وصل نشد ({exc}) — فقط اکانت اول برای join کانال‌های جدید استفاده می‌شه.", flush=True)
+        client2 = None
+
     deleted_on_start = purge_old_ads(conn)
     if deleted_on_start:
         print(f"🧹 پاک‌سازی ابتدای اجرا: {deleted_on_start} ردیف قدیمی حذف شد.", flush=True)
 
-    known: set[str] = await sync_channels(client, conn)
-    known_groups: set[str] = await sync_source_groups(client, conn)
+    known: set[str] = await sync_channels(client, conn, client2=client2)
+    known_groups: set[str] = await sync_source_groups(client, conn, client2=client2)
     print(f"📡 در حال گوش‌دادن به {len(known)} کانال: {', '.join(sorted(known)) or '—'}", flush=True)
 
-    @client.on(events.NewMessage)
-    async def handler(event) -> None:
+    async def _on_message(event, source_client: TelegramClient) -> None:
         # توجه مهم: Telethon اگه توی handler یه پیام خاص خطا بدهد، اون خطا
         # را کاملاً بی‌صدا می‌بلعد (نه کرش می‌کند، نه چاپ می‌کند) — یعنی اگر
         # try/except نداشته باشیم، ممکنه یک پیام مشکل‌دار باعث شود کل
@@ -449,7 +512,9 @@ async def live_collect() -> None:
         # کل بدنه را توی try/except می‌گذاریم و هر خطا را با traceback کامل
         # چاپ می‌کنیم، تا اگه دوباره پیش بیاد بلافاصله دیده شود.
         try:
-            await _handle_new_message(event, client, conn, known, known_groups, settings.forward_target_group)
+            await _handle_new_message(
+                event, source_client, conn, known, known_groups, settings.forward_target_group, client2=client2
+            )
         except Exception:  # noqa: BLE001
             print("❌ خطای غیرمنتظره در پردازش یک پیام زنده:", flush=True)
             traceback.print_exc()
@@ -458,14 +523,27 @@ async def live_collect() -> None:
             except Exception:  # noqa: BLE001
                 pass
 
-    asyncio.create_task(channel_sync_loop(client, conn, known))
-    asyncio.create_task(source_group_sync_loop(client, conn, known_groups))
+    @client.on(events.NewMessage)
+    async def handler1(event) -> None:
+        await _on_message(event, client)
+
+    if client2 is not None:
+        @client2.on(events.NewMessage)
+        async def handler2(event) -> None:
+            await _on_message(event, client2)
+
+    asyncio.create_task(channel_sync_loop(client, conn, known, client2=client2))
+    asyncio.create_task(source_group_sync_loop(client, conn, known_groups, client2=client2))
     asyncio.create_task(midnight_purge_loop(conn))
     print("telegramonline collector is running.")
-    await client.run_until_disconnected()
+
+    if client2 is not None:
+        await asyncio.gather(client.run_until_disconnected(), client2.run_until_disconnected())
+    else:
+        await client.run_until_disconnected()
 
 
-async def _handle_new_message(event, client, conn, known: set[str], known_groups: set[str], forward_target_group: str = "") -> None:
+async def _handle_new_message(event, client, conn, known: set[str], known_groups: set[str], forward_target_group: str = "", client2: TelegramClient | None = None) -> None:
     chat = await event.get_chat()
     username = getattr(chat, "username", None)
     if username and username in known_groups:
@@ -475,6 +553,7 @@ async def _handle_new_message(event, client, conn, known: set[str], known_groups
             known,
             username,
             event.message,
+            client2=client2,
         )
         # اگه این گروه *هم* به‌عنوان کانال ثبت و join شده باشه (مثلاً
         # BAZARBOZORGEKHODROIRAN که هم گروه منبعه هم کانال)، پیام‌های خودش
