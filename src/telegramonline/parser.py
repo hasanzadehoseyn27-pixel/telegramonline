@@ -540,7 +540,11 @@ def detect_month(text: str) -> int | None:
 
 
 def detect_mileage(text: str) -> int | None:
-    match = re.search(r"(\d{1,3}(?:[./,]\d{3})+|\d{3,6})\s*(?:تا\s*)?(?:کار|کارکرد|امپر|آمپر)", text)
+    match = re.search(
+        r"(\d{1,3}(?:[./,]\d{3})+|\d{3,6})\s*(?:تا\s*)?(?:کار|کارکرد|امپر|آمپر|کیلومتر|کیلو متر|km)",
+        text,
+        flags=re.IGNORECASE,
+    )
     if not match:
         return None
     value = parse_number_token(match.group(1))
