@@ -104,12 +104,20 @@ async def join_channel_with_fallback(
     if client2 is not None:
         try:
             result = await join_channel(client2, username, allow_group=allow_group)
+            print(f"✅ اکانت دوم موفق شد کانال {username} رو join کنه.", flush=True)
             return result, 2
         except FloodWaitError as exc:
             print(
                 f"⏳ اکانت دوم محدودیت خورده ({exc.seconds} ثانیه) — کانال {username} رو با اکانت اول امتحان می‌کنیم.",
                 flush=True,
             )
+        except Exception as exc:  # noqa: BLE001
+            print(
+                f"⚠️ اکانت دوم با خطای دیگه‌ای مواجه شد ({type(exc).__name__}: {exc}) — کانال {username} رو با اکانت اول امتحان می‌کنیم.",
+                flush=True,
+            )
+    else:
+        print(f"ℹ️ اکانت دوم در دسترس نیست، کانال {username} مستقیم با اکانت اول امتحان می‌شه.", flush=True)
     result = await join_channel(client1, username, allow_group=allow_group)
     return result, 1
 
