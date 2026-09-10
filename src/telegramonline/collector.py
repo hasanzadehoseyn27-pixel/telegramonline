@@ -498,8 +498,12 @@ async def live_collect() -> None:
         if settings.forward_target_group:
             try:
                 await join_channel(client2, settings.forward_target_group)
-            except Exception:  # noqa: BLE001
-                pass
+                print(f"✅ اکانت دوم عضو گروه مقصدِ فوروارد ({settings.forward_target_group}) شد.", flush=True)
+            except Exception as exc:  # noqa: BLE001
+                print(
+                    f"⚠️ اکانت دوم نتونست عضو گروه مقصدِ فوروارد ({settings.forward_target_group}) بشه: {type(exc).__name__}: {exc}",
+                    flush=True,
+                )
     except Exception as exc:  # noqa: BLE001
         print(f"⚠️ اکانت دوم وصل نشد ({exc}) — فقط اکانت اول برای join کانال‌های جدید استفاده می‌شه.", flush=True)
         client2 = None
