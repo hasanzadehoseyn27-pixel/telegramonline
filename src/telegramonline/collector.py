@@ -173,6 +173,8 @@ async def backfill_today(
             total_seen += 1
             if not message.message:
                 continue
+            if message.sticker:
+                continue
             message_date = message.date
             if message_date and message_date.tzinfo is None:
                 message_date = message_date.replace(tzinfo=timezone.utc)
@@ -577,6 +579,8 @@ async def _handle_new_message(event, client, conn, known: set[str], known_groups
     if not username or username not in known:
         return
     if not event.message.message:
+        return
+    if event.message.sticker:
         return
     channel = get_channel_by_username(conn, username)
     if channel is None or not channel["active"]:
