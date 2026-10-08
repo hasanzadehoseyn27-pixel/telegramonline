@@ -23,7 +23,7 @@ from telethon.tl.functions.channels import JoinChannelRequest, LeaveChannelReque
 from telethon.tl.types import PeerChannel
 
 from .config import Settings
-from .bot_forwarder import enqueue as enqueue_bot_message
+from .bot_forwarder import build_message as build_bot_message, enqueue as enqueue_bot_message
 from .api.events import broadcast_new_ad, broadcast_price_alert, broadcast_price_update
 from .carx_bridge import ad_row_to_dto, push_ads_async
 from .api.price_tracker import check_price_change
@@ -609,8 +609,9 @@ async def _handle_new_message(event, client, conn, known: set[str], known_groups
             and settings.forward_target_group
             and (username or "").lower() != _target_name
         ):
-            text = event.message.message.strip()
-            text += f"\n\n🔗 https://t.me/{username}/{event.message.id}"
+            source_title = (channel["title"] if channel["title"] else f"@{username}")
+            source_url = f"https://t.me/{username}/{event.message.id}"
+            text = build_bot_message(source_title, source_url, event.message.message)
             enqueue_bot_message(settings.forward_bot_token, settings.forward_target_group, text)
 
     triggered_alerts = check_price_alerts(

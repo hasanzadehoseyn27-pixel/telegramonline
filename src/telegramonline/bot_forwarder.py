@@ -13,7 +13,7 @@ import httpx
 
 SEND_INTERVAL_SECONDS = 3.2   # ~18 پیام در دقیقه برای هر گروه
 MAX_QUEUE_SIZE = 500          # اگه صف پر شد، قدیمی‌ترین‌ها دور ریخته می‌شن
-MAX_TEXT_LEN = 4000           # سقف تلگرام ۴۰۹۶ کاراکتره
+MAX_TEXT_LEN = 4000           # سقف تلگرام ۴۰۹۶ کاراکتره (برش متن قبل از ساخت HTML توسط فراخوان انجام می‌شه)
 
 _queues: dict[str, asyncio.Queue] = {}
 _tasks: dict[str, asyncio.Task] = {}
@@ -37,7 +37,7 @@ async def _worker(token: str, chat: str, queue: asyncio.Queue) -> None:
                 try:
                     resp = await http.post(
                         url,
-                        json={"chat_id": chat, "text": text, "disable_web_page_preview": True},
+                        json={"chat_id": chat, "text": text, "parse_mode": "HTML", "disable_web_page_preview": True},
                     )
                     if resp.status_code == 429:
                         retry = int(resp.json().get("parameters", {}).get("retry_after", 5))
@@ -54,8 +54,17 @@ async def _worker(token: str, chat: str, queue: asyncio.Queue) -> None:
             await asyncio.sleep(SEND_INTERVAL_SECONDS)
 
 
+def build_message(title: str, source_url: str, body: str) -> str:
+    """پیام HTML: بالا «Forwarded from <اسم کانال>» (لینک به پیام اصلی) و زیرش متن آگهی."""
+    import html
+
+    body = html.escape(body.strip())[: MAX_TEXT_LEN - 300]
+    head = f'📨 <a href="{html.escape(source_url, quote=True)}">Forwarded from {html.escape(title)}</a>'
+    return f"{head}\n\n{body}"
+
+
 def enqueue(token: str, chat: str, text: str) -> None:
-    """پیام را در صف گروه می‌گذارد (غیر مسدودکننده). اگه توکن/گروه خالی باشه کاری نمی‌کنه."""
+    """پیام (HTML) را در صف گروه می‌گذارد (غیر مسدودکننده). اگه توکن/گروه خالی باشه کاری نمی‌کنه."""
     if not token or not chat or not text:
         return
     chat = _normalize_chat(chat)
@@ -69,4 +78,4 @@ def enqueue(token: str, chat: str, text: str) -> None:
             queue.get_nowait()
         except asyncio.QueueEmpty:
             pass
-    queue.put_nowait(text[:MAX_TEXT_LEN])
+    queue.put_nowait(text)
