@@ -497,18 +497,28 @@ async def live_collect() -> None:
         me2 = await candidate.get_me()
         client2 = candidate
         print(f"📱 اکانت دوم متصل شد: {me2.phone} (@{me2.username}) — کانال‌های جدید اول رو این می‌رن.", flush=True)
-        if settings.forward_target_group:
+        if settings.forward_target_group_2:
             try:
-                await join_channel(client2, settings.forward_target_group)
-                print(f"✅ اکانت دوم عضو گروه مقصدِ فوروارد ({settings.forward_target_group}) شد.", flush=True)
+                await join_channel(client2, settings.forward_target_group_2)
+                print(f"✅ اکانت دوم عضو گروه مقصدِ فوروارد ({settings.forward_target_group_2}) شد.", flush=True)
             except Exception as exc:  # noqa: BLE001
                 print(
-                    f"⚠️ اکانت دوم نتونست عضو گروه مقصدِ فوروارد ({settings.forward_target_group}) بشه: {type(exc).__name__}: {exc}",
+                    f"⚠️ اکانت دوم نتونست عضو گروه مقصدِ فوروارد ({settings.forward_target_group_2}) بشه: {type(exc).__name__}: {exc}",
                     flush=True,
                 )
     except Exception as exc:  # noqa: BLE001
         print(f"⚠️ اکانت دوم وصل نشد ({exc}) — فقط اکانت اول برای join کانال‌های جدید استفاده می‌شه.", flush=True)
         client2 = None
+
+    if settings.forward_target_group:
+        try:
+            await join_channel(client, settings.forward_target_group)
+            print(f"✅ اکانت اول عضو گروه مقصدِ فوروارد ({settings.forward_target_group}) شد.", flush=True)
+        except Exception as exc:  # noqa: BLE001
+            print(
+                f"⚠️ اکانت اول نتونست عضو گروه مقصدِ فوروارد ({settings.forward_target_group}) بشه: {type(exc).__name__}: {exc}",
+                flush=True,
+            )
 
     deleted_on_start = purge_old_ads(conn)
     if deleted_on_start:
@@ -527,7 +537,14 @@ async def live_collect() -> None:
         # چاپ می‌کنیم، تا اگه دوباره پیش بیاد بلافاصله دیده شود.
         try:
             await _handle_new_message(
-                event, source_client, conn, known, known_groups, settings.forward_target_group, client2=client2
+                event,
+                source_client,
+                conn,
+                known,
+                known_groups,
+                # هر اکانت آگهی‌های خودش رو به گروه مقصد خودش می‌فرسته
+                settings.forward_target_group_2 if source_client is client2 and client2 is not None else settings.forward_target_group,
+                client2=client2,
             )
         except Exception:  # noqa: BLE001
             print("❌ خطای غیرمنتظره در پردازش یک پیام زنده:", flush=True)
