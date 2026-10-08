@@ -622,7 +622,8 @@ async def _handle_new_message(event, client, conn, known: set[str], known_groups
             try:
                 await client.forward_messages(forward_target_group, event.message)
             except Exception as exc:  # noqa: BLE001
-                print(f"⚠️ فوروارد به گروه مقصد ناموفق بود: {exc}", flush=True)
+                _acc = "دوم" if (client2 is not None and client is client2) else "اول"
+                print(f"⚠️ فوروارد به گروه {forward_target_group} با اکانت {_acc} ناموفق بود: {type(exc).__name__}: {exc}", flush=True)
 
     triggered_alerts = check_price_alerts(
         conn,
