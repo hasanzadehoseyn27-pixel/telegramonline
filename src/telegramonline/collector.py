@@ -605,14 +605,14 @@ async def _handle_new_message(event, client, conn, known: set[str], known_groups
         _target_name = (settings.forward_target_group if settings is not None else "").lstrip("@").lower()
         if (
             settings is not None
-            and settings.forward_bot_token
+            and settings.forward_bot_tokens
             and settings.forward_target_group
             and (username or "").lower() != _target_name
         ):
             source_title = (channel["title"] if channel["title"] else f"@{username}")
             source_url = f"https://t.me/{username}/{event.message.id}"
             text = build_bot_message(source_title, source_url, event.message.message)
-            enqueue_bot_message(settings.forward_bot_token, settings.forward_target_group, text)
+            enqueue_bot_message(settings.forward_bot_tokens, settings.forward_target_group, text)
 
     triggered_alerts = check_price_alerts(
         conn,

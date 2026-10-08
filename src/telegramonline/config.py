@@ -17,6 +17,28 @@ def load_dotenv(path: str | Path = ".env") -> None:
         os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
 
 
+def load_bot_tokens() -> tuple[str, ...]:
+    """توکن رباتِ ارسال از سه جا خونده می‌شه (بدون تکرار، به همین ترتیب):
+    1) FORWARD_BOT_TOKEN  (تک توکن، سازگار با قبل)
+    2) FORWARD_BOT_TOKENS (چند توکن با کاما)
+    3) فایل bot_tokens.txt (هر خط یک توکن؛ مسیرش با FORWARD_BOT_TOKENS_FILE عوض می‌شه)
+    """
+    tokens: list[str] = []
+
+    def add(raw: str) -> None:
+        for part in raw.replace("\n", ",").split(","):
+            part = part.strip().strip('"').strip("'")
+            if part and not part.startswith("#") and ":" in part and part not in tokens:
+                tokens.append(part)
+
+    add(os.getenv("FORWARD_BOT_TOKEN", ""))
+    add(os.getenv("FORWARD_BOT_TOKENS", ""))
+    file_path = Path(os.getenv("FORWARD_BOT_TOKENS_FILE", "bot_tokens.txt").strip() or "bot_tokens.txt")
+    if file_path.exists():
+        add(file_path.read_text(encoding="utf-8-sig"))
+    return tuple(tokens)
+
+
 @dataclass(frozen=True)
 class Settings:
     api_id: int
@@ -26,7 +48,7 @@ class Settings:
     database_path: Path
     export_path: Path
     forward_target_group: str
-    forward_bot_token: str
+    forward_bot_tokens: tuple[str, ...]
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -49,6 +71,6 @@ class Settings:
             # فیچر کلاً غیرفعاله.
             forward_target_group=os.getenv("FORWARD_TARGET_GROUP", "").strip(),
             # توکن رباتی که آگهی‌ها رو توی گروه‌ها می‌ذاره (از @BotFather). خالی = فوروارد غیرفعال.
-            forward_bot_token=os.getenv("FORWARD_BOT_TOKEN", "").strip(),
+            forward_bot_tokens=load_bot_tokens(),
         )
 
