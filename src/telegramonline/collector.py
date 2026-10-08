@@ -23,6 +23,7 @@ from telethon.tl.functions.channels import JoinChannelRequest, LeaveChannelReque
 from telethon.tl.types import PeerChannel
 
 from .config import Settings
+from .bot_forwarder import enqueue as enqueue_bot_message
 from .api.events import broadcast_new_ad, broadcast_price_alert, broadcast_price_update
 from .carx_bridge import ad_row_to_dto, push_ads_async
 from .api.price_tracker import check_price_change
@@ -497,28 +498,9 @@ async def live_collect() -> None:
         me2 = await candidate.get_me()
         client2 = candidate
         print(f"📱 اکانت دوم متصل شد: {me2.phone} (@{me2.username}) — کانال‌های جدید اول رو این می‌رن.", flush=True)
-        if settings.forward_target_group_2:
-            try:
-                await join_channel(client2, settings.forward_target_group_2)
-                print(f"✅ اکانت دوم عضو گروه مقصدِ فوروارد ({settings.forward_target_group_2}) شد.", flush=True)
-            except Exception as exc:  # noqa: BLE001
-                print(
-                    f"⚠️ اکانت دوم نتونست عضو گروه مقصدِ فوروارد ({settings.forward_target_group_2}) بشه: {type(exc).__name__}: {exc}",
-                    flush=True,
-                )
     except Exception as exc:  # noqa: BLE001
         print(f"⚠️ اکانت دوم وصل نشد ({exc}) — فقط اکانت اول برای join کانال‌های جدید استفاده می‌شه.", flush=True)
         client2 = None
-
-    if settings.forward_target_group:
-        try:
-            await join_channel(client, settings.forward_target_group)
-            print(f"✅ اکانت اول عضو گروه مقصدِ فوروارد ({settings.forward_target_group}) شد.", flush=True)
-        except Exception as exc:  # noqa: BLE001
-            print(
-                f"⚠️ اکانت اول نتونست عضو گروه مقصدِ فوروارد ({settings.forward_target_group}) بشه: {type(exc).__name__}: {exc}",
-                flush=True,
-            )
 
     deleted_on_start = purge_old_ads(conn)
     if deleted_on_start:
@@ -542,8 +524,8 @@ async def live_collect() -> None:
                 conn,
                 known,
                 known_groups,
-                # هر اکانت آگهی‌های خودش رو به گروه مقصد خودش می‌فرسته
-                settings.forward_target_group_2 if source_client is client2 and client2 is not None else settings.forward_target_group,
+                # (فوروارد دیگه با اکانت شخصی نیست؛ با ربات انجام می‌شه)
+                settings,
                 client2=client2,
             )
         except Exception:  # noqa: BLE001
@@ -574,7 +556,7 @@ async def live_collect() -> None:
         await client.run_until_disconnected()
 
 
-async def _handle_new_message(event, client, conn, known: set[str], known_groups: set[str], forward_target_group: str = "", client2: TelegramClient | None = None) -> None:
+async def _handle_new_message(event, client, conn, known: set[str], known_groups: set[str], settings=None, client2: TelegramClient | None = None) -> None:
     chat = await event.get_chat()
     username = getattr(chat, "username", None)
     if username and username in known_groups:
@@ -617,13 +599,18 @@ async def _handle_new_message(event, client, conn, known: set[str], known_groups
     if ads_for_carx:
         await push_ads_async(ads_for_carx)
 
-        # ── فوروارد عین پیام به گروه مقصد (اگه تنظیم شده باشه) ──
-        if forward_target_group:
-            try:
-                await client.forward_messages(forward_target_group, event.message)
-            except Exception as exc:  # noqa: BLE001
-                _acc = "دوم" if (client2 is not None and client is client2) else "اول"
-                print(f"⚠️ فوروارد به گروه {forward_target_group} با اکانت {_acc} ناموفق بود: {type(exc).__name__}: {exc}", flush=True)
+        # ── ارسال کپی آگهی به گروه مقصدِ همین اکانت، با ربات ──
+        # اکانت اول (client2 نیست) → forward_target_group، اکانت دوم → forward_target_group_2
+        if settings is not None and settings.forward_bot_token:
+            target = (
+                settings.forward_target_group_2
+                if (client2 is not None and client is client2)
+                else settings.forward_target_group
+            )
+            if target:
+                text = event.message.message.strip()
+                text += f"\n\n🔗 https://t.me/{username}/{event.message.id}"
+                enqueue_bot_message(settings.forward_bot_token, target, text)
 
     triggered_alerts = check_price_alerts(
         conn,

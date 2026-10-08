@@ -27,6 +27,7 @@ class Settings:
     export_path: Path
     forward_target_group: str
     forward_target_group_2: str
+    forward_bot_token: str
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -51,5 +52,7 @@ class Settings:
             # مقصد فورواردِ آگهی‌هایی که اکانت دوم (0935) دریافت می‌کنه.
             # اکانت اول (0919) به FORWARD_TARGET_GROUP می‌فرسته.
             forward_target_group_2=os.getenv("FORWARD_TARGET_GROUP_2", "").strip(),
+            # توکن رباتی که آگهی‌ها رو توی گروه‌ها می‌ذاره (از @BotFather). خالی = فوروارد غیرفعال.
+            forward_bot_token=os.getenv("FORWARD_BOT_TOKEN", "").strip(),
         )
 
