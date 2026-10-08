@@ -26,7 +26,6 @@ class Settings:
     database_path: Path
     export_path: Path
     forward_target_group: str
-    forward_target_group_2: str
     forward_bot_token: str
 
     @classmethod
@@ -49,9 +48,6 @@ class Settings:
             # (فوروارد) به این گروه هم فرستاده می‌شه. اگه خالی باشه، این
             # فیچر کلاً غیرفعاله.
             forward_target_group=os.getenv("FORWARD_TARGET_GROUP", "").strip(),
-            # مقصد فورواردِ آگهی‌هایی که اکانت دوم (0935) دریافت می‌کنه.
-            # اکانت اول (0919) به FORWARD_TARGET_GROUP می‌فرسته.
-            forward_target_group_2=os.getenv("FORWARD_TARGET_GROUP_2", "").strip(),
             # توکن رباتی که آگهی‌ها رو توی گروه‌ها می‌ذاره (از @BotFather). خالی = فوروارد غیرفعال.
             forward_bot_token=os.getenv("FORWARD_BOT_TOKEN", "").strip(),
         )

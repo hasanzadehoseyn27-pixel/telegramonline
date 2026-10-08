@@ -599,18 +599,11 @@ async def _handle_new_message(event, client, conn, known: set[str], known_groups
     if ads_for_carx:
         await push_ads_async(ads_for_carx)
 
-        # ── ارسال کپی آگهی به گروه مقصدِ همین اکانت، با ربات ──
-        # اکانت اول (client2 نیست) → forward_target_group، اکانت دوم → forward_target_group_2
-        if settings is not None and settings.forward_bot_token:
-            target = (
-                settings.forward_target_group_2
-                if (client2 is not None and client is client2)
-                else settings.forward_target_group
-            )
-            if target:
-                text = event.message.message.strip()
-                text += f"\n\n🔗 https://t.me/{username}/{event.message.id}"
-                enqueue_bot_message(settings.forward_bot_token, target, text)
+        # ── ارسال کپی آگهی به گروه مقصد (برای هر دو اکانت یکی)، با ربات ──
+        if settings is not None and settings.forward_bot_token and settings.forward_target_group:
+            text = event.message.message.strip()
+            text += f"\n\n🔗 https://t.me/{username}/{event.message.id}"
+            enqueue_bot_message(settings.forward_bot_token, settings.forward_target_group, text)
 
     triggered_alerts = check_price_alerts(
         conn,
