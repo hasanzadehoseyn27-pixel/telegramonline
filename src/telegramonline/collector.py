@@ -600,7 +600,15 @@ async def _handle_new_message(event, client, conn, known: set[str], known_groups
         await push_ads_async(ads_for_carx)
 
         # ── ارسال کپی آگهی به گروه مقصد (برای هر دو اکانت یکی)، با ربات ──
-        if settings is not None and settings.forward_bot_token and settings.forward_target_group:
+        # جلوگیری از حلقه: پیام‌هایی که خودِ گروه مقصد (یا کانال هم‌نام) تولید کرده، دوباره
+        # به همان گروه فرستاده نشه.
+        _target_name = (settings.forward_target_group if settings is not None else "").lstrip("@").lower()
+        if (
+            settings is not None
+            and settings.forward_bot_token
+            and settings.forward_target_group
+            and (username or "").lower() != _target_name
+        ):
             text = event.message.message.strip()
             text += f"\n\n🔗 https://t.me/{username}/{event.message.id}"
             enqueue_bot_message(settings.forward_bot_token, settings.forward_target_group, text)
