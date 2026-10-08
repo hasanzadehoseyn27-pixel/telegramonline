@@ -609,7 +609,12 @@ async def _handle_new_message(event, client, conn, known: set[str], known_groups
             and settings.forward_target_group
             and (username or "").lower() != _target_name
         ):
-            source_title = (channel["title"] if channel["title"] else f"@{username}")
+            # اسم کانال: اول از خود تلگرام (chat.title)، بعد از دیتابیس، آخر یوزرنیم
+            source_title = (
+                (getattr(chat, "title", None) or "").strip()
+                or (channel["title"] or "").strip()
+                or f"@{username}"
+            )
             source_url = f"https://t.me/{username}/{event.message.id}"
             text = build_bot_message(source_title, source_url, event.message.message)
             enqueue_bot_message(settings.forward_bot_tokens, settings.forward_target_group, text)
