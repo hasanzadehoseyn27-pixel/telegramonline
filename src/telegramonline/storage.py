@@ -176,42 +176,19 @@ def connect(db_path: str | Path) -> sqlite3.Connection:
 
 
 def _dedupe_ads_by_content(conn: sqlite3.Connection) -> None:
-    """آگهی‌های تکراری واقعی (همون متن، پیام تلگرام جدید) را پاک می‌کند.
+    """ایندکس‌های یکتایی قدیمیِ محتوا (dedup_key) را برمی‌دارد.
 
-    قبلاً محدودیت یکتایی فقط روی (channel_id, source_message_id, raw_text)
-    بود — یعنی اگه فروشنده‌ای عین همون متن رو با پیام تلگرام *جدید* (شماره
-    پیام متفاوت) دوباره می‌فرستاد، هیچ‌وقت تکراری تشخیص داده نمی‌شد، چون
-    ستون dedup_key هیچ‌وقت واقعاً یکتا اعمال نشده بود (فقط ایندکس معمولی
-    داشت، نه ایندکس یکتا). این تابع اول رکوردهای تکراریِ موجود را (بر اساس
-    channel_id + dedup_key، فقط جدیدترین را نگه می‌دارد) پاک می‌کند، بعد یک
-    ایندکس یکتا می‌سازد تا از این به بعد چنین تکراری‌هایی اصلاً insert
-    نشوند (INSERT OR IGNORE در save_ads این‌جوری خودش رد می‌کند).
+    قبلاً هر متنِ یکسان در یک کانال فقط یک‌بار (برای همیشه) ذخیره می‌شد؛ نتیجه‌اش
+    این بود که فروشنده‌هایی که هر روز همان آگهی ثابت را دوباره می‌گذارند، از روز
+    دوم به بعد هیچ‌وقت به سایت/گروه نمی‌رسیدند. تصمیم: هر پیام تلگرام جدید، حتی
+    با متن یکسان، آگهی تازه حساب شود (تکراری‌ها مشکلی ندارند).
 
-    نکته‌ی مهم: یکتایی «روزانه» است (channel_id + dedup_key + day_key). قبلاً
-    فقط (channel_id, dedup_key) بود و فروشنده‌هایی که هر روز همان آگهی ثابت را
-    دوباره می‌گذارند، از روز دوم به بعد هیچ‌وقت به سایت/گروه نمی‌رسیدند، چون
-    متنشان «قبلاً دیده شده» حساب می‌شد. حالا تکرار در همان روز رد می‌شود ولی
-    همان متن در روز بعد دوباره آگهی تازه است.
+    تکراری‌نشدنِ *همان پیام* (مثلاً بک‌فیل یا catch_up که یک پیام را دوباره
+    می‌خواند) همچنان با UNIQUE(channel_id, source_message_id, raw_text) در
+    جدول تضمین است. هیچ ردیفی هم اینجا پاک نمی‌شود.
     """
-    conn.execute(
-        """
-        DELETE FROM ads
-        WHERE dedup_key != ''
-          AND id NOT IN (
-              SELECT MAX(id) FROM ads WHERE dedup_key != ''
-              GROUP BY channel_id, dedup_key, COALESCE(day_key, '')
-          )
-        """
-    )
-    # ایندکس قدیمیِ بدون روز را حذف کن (مانع آگهی‌های هم‌متن در روزهای بعد بود)
     conn.execute("DROP INDEX IF EXISTS idx_ads_dedup_unique")
-    conn.execute(
-        """
-        CREATE UNIQUE INDEX IF NOT EXISTS idx_ads_dedup_day_unique
-        ON ads(channel_id, dedup_key, COALESCE(day_key, ''))
-        WHERE dedup_key != ''
-        """
-    )
+    conn.execute("DROP INDEX IF EXISTS idx_ads_dedup_day_unique")
     conn.commit()
 
 

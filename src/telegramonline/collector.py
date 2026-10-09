@@ -164,6 +164,7 @@ async def backfill_today(
     channel_id: int,
     channel_username: str,
     collected: list | None = None,
+    max_age_hours: float | None = None,
 ) -> int:
     """فقط پیام‌های همان روز (به‌وقت تهران) کانال را با شماره پیام واقعی می‌خواند.
 
@@ -171,6 +172,11 @@ async def backfill_today(
     جمع می‌شود (برای ارسال به سایت/گروه در بک‌فیل کامل).
     """
     today = _compute_day_key(datetime.now(timezone.utc))
+    cutoff = (
+        datetime.now(timezone.utc) - timedelta(hours=max_age_hours)
+        if max_age_hours is not None
+        else None
+    )
     parsed = []
     total_seen = 0
     inserted = 0
@@ -185,6 +191,8 @@ async def backfill_today(
             if message_date and message_date.tzinfo is None:
                 message_date = message_date.replace(tzinfo=timezone.utc)
             if message_date and _compute_day_key(message_date) != today:
+                break
+            if cutoff is not None and message_date and message_date < cutoff:
                 break
             parsed.extend(
                 parse_message_group(str(message.id), message.message, message_date, source="live")
@@ -202,6 +210,81 @@ async def backfill_today(
     except Exception as exc:  # noqa: BLE001
         print(f"⚠️ خطا در بک‌فیل کانال {channel_username}: {exc}", flush=True)
     return inserted
+
+
+async def deliver_backfilled(settings: Settings, items: list) -> int:
+    """آگهی‌های جاافتاده‌ی بک‌فیل را مثل پیام زنده به سایت و گروه (با ربات‌ها) می‌فرستد.
+
+    items: لیست (username, title, row). فقط sale/buyer/call_price ارسال می‌شوند.
+    """
+    sendable = [t for t in items if t[2]["status"] in ("sale", "buyer", "call_price")]
+    if not sendable:
+        return 0
+    sendable.sort(key=lambda t: t[2]["message_date"] or "")
+    titles = {u: t for u, t, _ in sendable}
+    dtos = [ad_row_to_dto(row, channel_titles=titles) for _, _, row in sendable]
+    for i in range(0, len(dtos), 100):
+        await push_ads_async(dtos[i : i + 100])
+    target = (settings.forward_target_group or "").lstrip("@").lower()
+    if settings.forward_bot_tokens and settings.forward_target_group:
+        for username, title, row in sendable:
+            if username.lower() == target:
+                continue
+            url = f"https://t.me/{username}/{row['source_message_id']}"
+            enqueue_bot_message(
+                settings.forward_bot_tokens,
+                settings.forward_target_group,
+                build_bot_message(title, url, row["raw_text"]),
+            )
+    return len(sendable)
+
+
+BACKFILL_INTERVAL_MINUTES = 30   # فاصله‌ی دو دور بک‌فیل (بعد از پایان دور قبل)
+BACKFILL_WINDOW_HOURS = 3        # هر دور چند ساعت اخیر هر کانال را دوباره می‌خواند
+
+
+async def periodic_backfill_loop(
+    client: TelegramClient,
+    client2: TelegramClient | None,
+    conn,
+    settings: Settings,
+) -> None:
+    """تور ایمنی: هر ۳۰ دقیقه چند ساعت اخیر همه‌ی کانال‌ها را دوباره می‌خواند.
+
+    آگهی‌هایی که زنده گرفته نشده‌اند (قطعی اتصال، ری‌استارت، ویرایش و ...) پیدا و
+    مثل پیام زنده به سایت و گروه فرستاده می‌شوند. پیام‌های ذخیره‌شده‌ی قبلی رد می‌شوند.
+    """
+    await asyncio.sleep(BACKFILL_INTERVAL_MINUTES * 60)
+    while True:
+        started = time.time()
+        total = 0
+        items: list = []
+        try:
+            channels = list_active_joined_channels(conn)
+            for ch in channels:
+                use = client2 if (client2 is not None and ch["account"] == 2) else client
+                collected: list = []
+                try:
+                    await backfill_today(
+                        use, conn, ch["id"], ch["username"],
+                        collected=collected, max_age_hours=BACKFILL_WINDOW_HOURS,
+                    )
+                except Exception:  # noqa: BLE001
+                    pass
+                title = (ch["title"] or "").strip() or f"@{ch['username']}"
+                for row in collected:
+                    items.append((ch["username"], title, row))
+                await asyncio.sleep(0.3)
+            total = await deliver_backfilled(settings, items)
+            print(
+                f"🔁 بک‌فیل دوره‌ای: {len(channels)} کانال، {len(items)} آگهی جاافتاده، "
+                f"{total} ارسال‌شده ({int(time.time() - started)} ثانیه).",
+                flush=True,
+            )
+        except Exception:  # noqa: BLE001
+            print("❌ خطا در بک‌فیل دوره‌ای:", flush=True)
+            traceback.print_exc()
+        await asyncio.sleep(BACKFILL_INTERVAL_MINUTES * 60)
 
 
 async def add_and_activate_channel(
@@ -484,6 +567,7 @@ async def live_collect() -> None:
         connection_retries=None,  # بی‌نهایت تلاش برای وصل‌شدن دوباره (پیش‌فرض فقط ۵ بار بود)
         retry_delay=2,
         auto_reconnect=True,
+        catch_up=True,  # پیام‌های زمان قطعی/ری‌استارت بعد از وصل شدن جبران شوند
     )
     await client.start()
 
@@ -502,6 +586,7 @@ async def live_collect() -> None:
             connection_retries=None,
             retry_delay=2,
             auto_reconnect=True,
+            catch_up=True,
         )
         await candidate.start()
         me2 = await candidate.get_me()
@@ -549,14 +634,25 @@ async def live_collect() -> None:
     async def handler1(event) -> None:
         await _on_message(event, client)
 
+    # ویرایش پیام: نسخه‌ی ویرایش‌شده هم بررسی می‌شود (اگر متنش با نسخه‌های
+    # ذخیره‌شده فرق کند آگهی تازه حساب می‌شود؛ متن یکسان خودبه‌خود رد می‌شود).
+    @client.on(events.MessageEdited)
+    async def edit_handler1(event) -> None:
+        await _on_message(event, client)
+
     if client2 is not None:
         @client2.on(events.NewMessage)
         async def handler2(event) -> None:
             await _on_message(event, client2)
 
+        @client2.on(events.MessageEdited)
+        async def edit_handler2(event) -> None:
+            await _on_message(event, client2)
+
     asyncio.create_task(channel_sync_loop(client, conn, known, client2=client2))
     asyncio.create_task(source_group_sync_loop(client, conn, known_groups, client2=client2))
     asyncio.create_task(midnight_purge_loop(conn))
+    asyncio.create_task(periodic_backfill_loop(client, client2, conn, settings))
     print("telegramonline collector is running.")
 
     if client2 is not None:
