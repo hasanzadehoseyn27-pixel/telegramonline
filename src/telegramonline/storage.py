@@ -186,20 +186,29 @@ def _dedupe_ads_by_content(conn: sqlite3.Connection) -> None:
     channel_id + dedup_key، فقط جدیدترین را نگه می‌دارد) پاک می‌کند، بعد یک
     ایندکس یکتا می‌سازد تا از این به بعد چنین تکراری‌هایی اصلاً insert
     نشوند (INSERT OR IGNORE در save_ads این‌جوری خودش رد می‌کند).
+
+    نکته‌ی مهم: یکتایی «روزانه» است (channel_id + dedup_key + day_key). قبلاً
+    فقط (channel_id, dedup_key) بود و فروشنده‌هایی که هر روز همان آگهی ثابت را
+    دوباره می‌گذارند، از روز دوم به بعد هیچ‌وقت به سایت/گروه نمی‌رسیدند، چون
+    متنشان «قبلاً دیده شده» حساب می‌شد. حالا تکرار در همان روز رد می‌شود ولی
+    همان متن در روز بعد دوباره آگهی تازه است.
     """
     conn.execute(
         """
         DELETE FROM ads
         WHERE dedup_key != ''
           AND id NOT IN (
-              SELECT MAX(id) FROM ads WHERE dedup_key != '' GROUP BY channel_id, dedup_key
+              SELECT MAX(id) FROM ads WHERE dedup_key != ''
+              GROUP BY channel_id, dedup_key, COALESCE(day_key, '')
           )
         """
     )
+    # ایندکس قدیمیِ بدون روز را حذف کن (مانع آگهی‌های هم‌متن در روزهای بعد بود)
+    conn.execute("DROP INDEX IF EXISTS idx_ads_dedup_unique")
     conn.execute(
         """
-        CREATE UNIQUE INDEX IF NOT EXISTS idx_ads_dedup_unique
-        ON ads(channel_id, dedup_key)
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_ads_dedup_day_unique
+        ON ads(channel_id, dedup_key, COALESCE(day_key, ''))
         WHERE dedup_key != ''
         """
     )
