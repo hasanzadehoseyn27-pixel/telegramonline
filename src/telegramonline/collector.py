@@ -212,6 +212,23 @@ async def backfill_today(
     return inserted
 
 
+async def is_member(client: TelegramClient, username: str) -> bool:
+    """آیا این اکانت هنوز عضو کانال/گروه است؟ (برای اینکه بک‌فیل کانالی را که لفت داده‌ایم نخواند)
+
+    کانال‌های عمومی را می‌شود بدون عضویت هم خواند، پس فقط «ردیف در دیتابیس»
+    کافی نیست. فلگ `left` در تلگرام یعنی «خارج شده‌ایم یا عضو نیستیم».
+    اگر نتوانستیم بررسی کنیم (خطای شبکه)، به نفع «عضو است» تصمیم می‌گیریم تا
+    آگهی از دست نرود.
+    """
+    try:
+        entity = await client.get_entity(username)
+    except (ChannelPrivateError, ValueError):
+        return False
+    except Exception:  # noqa: BLE001
+        return True
+    return not bool(getattr(entity, "left", False))
+
+
 async def deliver_backfilled(settings: Settings, items: list) -> int:
     """آگهی‌های جاافتاده‌ی بک‌فیل را مثل پیام زنده به سایت و گروه (با ربات‌ها) می‌فرستد.
 
@@ -259,11 +276,15 @@ async def periodic_backfill_loop(
         started = time.time()
         total = 0
         items: list = []
+        not_member: list[str] = []
         try:
             channels = list_active_joined_channels(conn)
             for ch in channels:
                 use = client2 if (client2 is not None and ch["account"] == 2) else client
                 collected: list = []
+                if not await is_member(use, ch["username"]):
+                    not_member.append(ch["username"])
+                    continue
                 try:
                     await backfill_today(
                         use, conn, ch["id"], ch["username"],
@@ -278,9 +299,12 @@ async def periodic_backfill_loop(
             total = await deliver_backfilled(settings, items)
             print(
                 f"🔁 بک‌فیل دوره‌ای: {len(channels)} کانال، {len(items)} آگهی جاافتاده، "
-                f"{total} ارسال‌شده ({int(time.time() - started)} ثانیه).",
+                f"{total} ارسال‌شده، {len(not_member)} کانال عضو نبودیم و رد شد "
+                f"({int(time.time() - started)} ثانیه).",
                 flush=True,
             )
+            if not_member:
+                print("   عضو نیستیم: " + ", ".join(not_member[:30]), flush=True)
         except Exception:  # noqa: BLE001
             print("❌ خطا در بک‌فیل دوره‌ای:", flush=True)
             traceback.print_exc()
@@ -404,7 +428,8 @@ async def sync_channels(client: TelegramClient, conn, client2: TelegramClient | 
     for channel in list_channels_pending_leave(conn):
         username = channel["username"]
         print(f"🚪 در حال خروج از کانال {username}...", flush=True)
-        left = await leave_channel(client, username)
+        leave_client = client2 if (client2 is not None and channel["account"] == 2) else client
+        left = await leave_channel(leave_client, username)
         if left:
             deleted_ads = delete_ads_for_channel(conn, channel["id"])
             remove_channel(conn, channel["id"])

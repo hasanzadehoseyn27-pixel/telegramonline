@@ -22,7 +22,7 @@ from telethon import TelegramClient
 
 from .bot_forwarder import _queues, build_message, enqueue
 from .carx_bridge import ad_row_to_dto, push_ads_async
-from .collector import backfill_today
+from .collector import backfill_today, is_member
 from .config import Settings
 from .net import parse_proxy_from_env
 from .storage import _clean_username, connect, get_channel_by_username, list_active_joined_channels
@@ -62,6 +62,9 @@ async def run(usernames: list[str], send_site: bool, send_group: bool) -> None:
     for i, ch in enumerate(channels, 1):
         username = ch["username"]
         collected: list = []
+        if not await is_member(client, username):
+            print(f"  ⏭ {username}: عضو نیستیم، رد شد.", flush=True)
+            continue
         try:
             inserted = await backfill_today(client, conn, ch["id"], username, collected=collected)
         except Exception as exc:  # noqa: BLE001
