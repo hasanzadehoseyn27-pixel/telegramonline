@@ -661,8 +661,33 @@ async def live_collect() -> None:
         await client.run_until_disconnected()
 
 
+async def _get_chat_safe(event, client: TelegramClient):
+    """چتِ رویداد را بدون درخواست سنگین GetDialogs می‌گیرد.
+
+    event.get_chat() وقتی چت در کش نباشد، iter_dialogs را صدا می‌زند؛ با حدود
+    هزار کانال این درخواست گاهی با «Telegram is having internal issues»
+    (RpcCallFailError) شکست می‌خورد و پیام از دست می‌رفت. اول از کش خودِ رویداد
+    و کش session استفاده می‌کنیم و فقط در آخر به get_chat برمی‌گردیم.
+    """
+    chat = getattr(event, "chat", None)
+    if chat is not None:
+        return chat
+    try:
+        input_peer = await client.get_input_entity(event.message.peer_id)
+        return await client.get_entity(input_peer)
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        return await event.get_chat()
+    except Exception as exc:  # noqa: BLE001
+        print(f"⚠️ چت پیام قابل دریافت نبود ({type(exc).__name__}) — این پیام رد شد، بک‌فیل دوره‌ای جبران می‌کند.", flush=True)
+        return None
+
+
 async def _handle_new_message(event, client, conn, known: set[str], known_groups: set[str], settings=None, client2: TelegramClient | None = None) -> None:
-    chat = await event.get_chat()
+    chat = await _get_chat_safe(event, client)
+    if chat is None:
+        return
     username = getattr(chat, "username", None)
     if username and username in known_groups:
         await discover_forwarded_channel_from_group(
