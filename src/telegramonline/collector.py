@@ -163,8 +163,13 @@ async def backfill_today(
     conn,
     channel_id: int,
     channel_username: str,
+    collected: list | None = None,
 ) -> int:
-    """فقط پیام‌های همان روز (به‌وقت تهران) کانال را با شماره پیام واقعی می‌خواند."""
+    """فقط پیام‌های همان روز (به‌وقت تهران) کانال را با شماره پیام واقعی می‌خواند.
+
+    اگر `collected` لیست داده شود، ردیف‌های تازه‌ذخیره‌شده (sqlite Row) هم در آن
+    جمع می‌شود (برای ارسال به سایت/گروه در بک‌فیل کامل).
+    """
     today = _compute_day_key(datetime.now(timezone.utc))
     parsed = []
     total_seen = 0
@@ -187,9 +192,13 @@ async def backfill_today(
             if len(parsed) >= 300:
                 saved = save_ads(conn, parsed, channel_id=channel_id, channel_username=channel_username)
                 inserted += len(saved)
+                if collected is not None:
+                    collected.extend(saved)
                 parsed.clear()
         saved = save_ads(conn, parsed, channel_id=channel_id, channel_username=channel_username)
         inserted += len(saved)
+        if collected is not None:
+            collected.extend(saved)
     except Exception as exc:  # noqa: BLE001
         print(f"⚠️ خطا در بک‌فیل کانال {channel_username}: {exc}", flush=True)
     return inserted
