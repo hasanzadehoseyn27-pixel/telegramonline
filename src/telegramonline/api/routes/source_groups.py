@@ -15,6 +15,7 @@ from telegramonline.storage import (
     deactivate_source_group,
     get_source_group,
     list_source_groups,
+    remove_source_group,
 )
 
 
@@ -61,9 +62,14 @@ def delete_source_group(
             message="گروه پیدا نشد.",
             group_id=group_id,
         )
-    ok = deactivate_source_group(db, group_id)
+    if not group["joined"]:
+        # هنوز عضو نشده‌ایم؛ خروجی لازم نیست، همان لحظه کامل حذف می‌شود
+        ok = remove_source_group(db, group_id)
+    else:
+        # عضو هستیم؛ collector در چرخه‌ی بعد خارج می‌شود و ردیف را پاک می‌کند
+        ok = deactivate_source_group(db, group_id)
     return SourceGroupActionResponse(
         ok=ok,
-        message="گروه برای حذف از پایش علامت‌گذاری شد." if ok else "حذف گروه ناموفق بود.",
+        message="گروه از پایش خارج شد." if ok else "حذف گروه ناموفق بود.",
         group_id=group_id,
     )

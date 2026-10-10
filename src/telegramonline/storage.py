@@ -611,7 +611,7 @@ def increment_source_group_discovered(conn: sqlite3.Connection, username: str) -
 
 
 def list_source_groups(conn: sqlite3.Connection) -> list[dict]:
-    rows = conn.execute("SELECT * FROM source_groups ORDER BY added_at DESC").fetchall()
+    rows = conn.execute("SELECT * FROM source_groups WHERE active = 1 ORDER BY added_at DESC").fetchall()
     return [
         {
             "id": row["id"],

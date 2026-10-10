@@ -522,7 +522,8 @@ async def sync_source_groups(client: TelegramClient, conn, client2: TelegramClie
 
     for group in list_source_groups_pending_leave(conn):
         username = group["username"]
-        left = await leave_channel(client, username)
+        leave_client = client2 if (client2 is not None and group["account"] == 2) else client
+        left = await leave_channel(leave_client, username)
         if left:
             remove_source_group(conn, group["id"])
             print(f"source group removed: {username}", flush=True)
