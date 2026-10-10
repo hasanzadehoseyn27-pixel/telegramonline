@@ -30,6 +30,8 @@ from .api.price_tracker import check_price_change
 from .net import parse_proxy_from_env
 from .parser import parse_message_group
 from .storage import (
+    block_channel,
+    is_channel_blocked,
     _compute_day_key,
     add_channel,
     check_price_alerts,
@@ -212,21 +214,29 @@ async def backfill_today(
     return inserted
 
 
-async def is_member(client: TelegramClient, username: str) -> bool:
-    """آیا این اکانت هنوز عضو کانال/گروه است؟ (برای اینکه بک‌فیل کانالی را که لفت داده‌ایم نخواند)
+async def member_usernames(client: TelegramClient) -> set[str] | None:
+    """یوزرنیم همه‌ی کانال/گروه‌هایی که این اکانت واقعاً عضوشان است (حروف کوچک).
 
-    کانال‌های عمومی را می‌شود بدون عضویت هم خواند، پس فقط «ردیف در دیتابیس»
-    کافی نیست. فلگ `left` در تلگرام یعنی «خارج شده‌ایم یا عضو نیستیم».
-    اگر نتوانستیم بررسی کنیم (خطای شبکه)، به نفع «عضو است» تصمیم می‌گیریم تا
-    آگهی از دست نرود.
+    کانال‌های عمومی را بدون عضویت هم می‌شود خواند، پس فقط «ردیف در دیتابیس» نشان
+    نمی‌دهد هنوز عضو هستیم. این لیست را با چند درخواست iter_dialogs می‌گیریم (نه
+    یک get_entity برای هر کانال، که ۱۵۰۰ درخواست ResolveUsername می‌شد و محدودیت
+    می‌خورد). اگر نتوانستیم بگیریم None برمی‌گردد و بک‌فیل همه را «عضو» فرض می‌کند
+    تا آگهی از دست نرود.
     """
+    names: set[str] = set()
     try:
-        entity = await client.get_entity(username)
-    except (ChannelPrivateError, ValueError):
-        return False
-    except Exception:  # noqa: BLE001
-        return True
-    return not bool(getattr(entity, "left", False))
+        async for dialog in client.iter_dialogs():
+            username = getattr(dialog.entity, "username", None)
+            if username:
+                names.add(username.lower())
+    except Exception as exc:  # noqa: BLE001
+        print(f"⚠️ لیست دیالوگ‌ها گرفته نشد ({type(exc).__name__}) — این دور همه عضو فرض می‌شوند.", flush=True)
+        return None
+    return names
+
+
+def is_member_of(members: set[str] | None, username: str) -> bool:
+    return members is None or username.lower() in members
 
 
 async def deliver_backfilled(settings: Settings, items: list) -> int:
@@ -279,10 +289,16 @@ async def periodic_backfill_loop(
         not_member: list[str] = []
         try:
             channels = list_active_joined_channels(conn)
+            members1 = await member_usernames(client)
+            members2 = await member_usernames(client2) if client2 is not None else set()
+            if members1 is None or members2 is None:
+                members = None
+            else:
+                members = members1 | members2
             for ch in channels:
                 use = client2 if (client2 is not None and ch["account"] == 2) else client
                 collected: list = []
-                if not await is_member(use, ch["username"]):
+                if not is_member_of(members, ch["username"]):
                     not_member.append(ch["username"])
                     continue
                 try:
@@ -350,6 +366,19 @@ JOIN_PACE_SECONDS = 10
 # منفی شروع می‌شه تا اولین فراخوانی همیشه مجاز باشه، صرف‌نظر از اینکه
 # time.monotonic() از چه عددی شروع می‌کنه (بستگی به مدت روشن‌بودن سیستم داره).
 _last_join_attempt_at: float = -JOIN_PACE_SECONDS
+# وقتی تلگرام FloodWait (محدودیت join) می‌دهد، تا این زمان (monotonic) هیچ join تازه‌ای
+# امتحان نمی‌شود؛ قبلاً هر ۳۰ ثانیه دوباره امتحان می‌شد که محدودیت را بدتر می‌کرد.
+_join_blocked_until: float = 0.0
+JOIN_FLOOD_MAX_BACKOFF = 3600
+
+
+def _join_blocked() -> bool:
+    return time.monotonic() < _join_blocked_until
+
+
+def _set_join_flood(seconds: int) -> None:
+    global _join_blocked_until
+    _join_blocked_until = time.monotonic() + min(max(int(seconds), 60), JOIN_FLOOD_MAX_BACKOFF)
 
 
 def _may_attempt_join_now() -> bool:
@@ -373,7 +402,7 @@ async def sync_channels(client: TelegramClient, conn, client2: TelegramClient | 
     تا لاگ‌ها شلوغ نشوند؛ صاحب سایت می‌تواند بعداً با یوزرنیم درست دوباره
     اضافه‌اش کند.
     """
-    for channel in list_unjoined_channels(conn):
+    for channel in ([] if _join_blocked() else list_unjoined_channels(conn)):
         is_priority = bool(channel["priority_join"]) if "priority_join" in channel.keys() else False
         if not is_priority and not _may_attempt_join_now():
             break
@@ -387,13 +416,15 @@ async def sync_channels(client: TelegramClient, conn, client2: TelegramClient | 
             # کل اکانت اعمال می‌شه (نه فقط این کانال)، ادامه‌ی این دور رو هم
             # متوقف می‌کنیم که بدتر نشه؛ دور بعدی (۳۰ ثانیه دیگر) دوباره
             # امتحان می‌شود.
+            _set_join_flood(exc.seconds)
             print(
-                f"⏳ محدودیت موقت تلگرام: باید {exc.seconds} ثانیه صبر کرد (کانال {username}). این تلاش شمرده نمی‌شود؛ فعلاً از عضوکردن کانال‌های جدید صرف‌نظر می‌شود تا دور بعد.",
+                f"⏳ محدودیت موقت تلگرام: باید {exc.seconds} ثانیه صبر کرد (کانال {username}). این تلاش شمرده نمی‌شود؛ تا حداکثر یک ساعت هیچ join تازه‌ای امتحان نمی‌شود.",
                 flush=True,
             )
             break
         if joined == "group":
             deactivate_channel(conn, channel["id"])
+            block_channel(conn, username, "group")
             print(
                 f"🚫 {username} یه گروهه، نه کانال — چون برنامه کانال‌محوره، اضافه نشد و غیرفعال شد.",
                 flush=True,
@@ -403,6 +434,7 @@ async def sync_channels(client: TelegramClient, conn, client2: TelegramClient | 
             attempts = increment_channel_join_attempts(conn, channel["id"])
             if attempts >= MAX_JOIN_ATTEMPTS:
                 deactivate_channel(conn, channel["id"])
+                block_channel(conn, username, "join_failed")
                 print(
                     f"🛑 کانال {username} بعد از {attempts} تلاش عضو نشد (احتمالاً یوزرنیم اشتباه/کانال حذف‌شده)؛ غیرفعال شد. برای تلاش دوباره، یوزرنیم درست را از سایت اضافه کن.",
                     flush=True,
@@ -433,6 +465,8 @@ async def sync_channels(client: TelegramClient, conn, client2: TelegramClient | 
         if left:
             deleted_ads = delete_ads_for_channel(conn, channel["id"])
             remove_channel(conn, channel["id"])
+            # حذف‌شده‌ها نباید دوباره از فوروارد کشف و اضافه شوند
+            block_channel(conn, username, "removed")
             print(f"✅ از کانال {username} خارج شد؛ کانال و {deleted_ads} آگهی‌اش کامل حذف شدند.", flush=True)
         else:
             print(f"⚠️ خروج از {username} ناموفق بود؛ در دور بعد دوباره تلاش می‌شود.", flush=True)
@@ -441,7 +475,7 @@ async def sync_channels(client: TelegramClient, conn, client2: TelegramClient | 
 
 
 async def sync_source_groups(client: TelegramClient, conn, client2: TelegramClient | None = None) -> set[str]:
-    for group in list_unjoined_source_groups(conn):
+    for group in ([] if _join_blocked() else list_unjoined_source_groups(conn)):
         if not _may_attempt_join_now():
             break
         username = group["username"]
@@ -449,6 +483,7 @@ async def sync_source_groups(client: TelegramClient, conn, client2: TelegramClie
         try:
             joined, used_account = await join_channel_with_fallback(client2, client, username)
         except FloodWaitError as exc:
+            _set_join_flood(exc.seconds)
             print(
                 f"⏳ محدودیت موقت تلگرام: باید {exc.seconds} ثانیه صبر کرد (گروه {username}). این تلاش شمرده نمی‌شود.",
                 flush=True,
@@ -520,6 +555,8 @@ async def discover_forwarded_channel_from_group(
 ) -> None:
     origin_username, origin_title = await forwarded_channel_origin(client, message)
     if not origin_username or origin_username in known_channels:
+        return
+    if is_channel_blocked(conn, origin_username):
         return
 
     existing = get_channel_by_username(conn, origin_username)

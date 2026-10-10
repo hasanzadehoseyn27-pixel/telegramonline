@@ -22,7 +22,7 @@ from telethon import TelegramClient
 
 from .bot_forwarder import _queues, build_message, enqueue
 from .carx_bridge import ad_row_to_dto, push_ads_async
-from .collector import backfill_today, is_member
+from .collector import backfill_today, is_member_of, member_usernames
 from .config import Settings
 from .net import parse_proxy_from_env
 from .storage import _clean_username, connect, get_channel_by_username, list_active_joined_channels
@@ -57,12 +57,13 @@ async def run(usernames: list[str], send_site: bool, send_group: bool) -> None:
     )
     await client.start()
 
+    members = await member_usernames(client)
     print(f"در حال خواندن امروزِ {len(channels)} کانال ...", flush=True)
     all_new: list[tuple[str, str, object]] = []  # (username, title, row)
     for i, ch in enumerate(channels, 1):
         username = ch["username"]
         collected: list = []
-        if not await is_member(client, username):
+        if not is_member_of(members, username):
             print(f"  ⏭ {username}: عضو نیستیم، رد شد.", flush=True)
             continue
         try:

@@ -25,6 +25,12 @@ CREATE TABLE IF NOT EXISTS channels (
     added_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS blocked_channels (
+    username TEXT PRIMARY KEY,
+    reason TEXT,
+    blocked_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE IF NOT EXISTS source_groups (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     username TEXT NOT NULL UNIQUE,
@@ -453,6 +459,30 @@ def _clean_username(raw: str) -> str:
     return value.strip().rstrip("/")
 
 
+def block_channel(conn: sqlite3.Connection, username: str, reason: str = "") -> None:
+    """کانال را در لیست مسدودها می‌گذارد تا کشف خودکار (فوروارد) دوباره اضافه‌اش نکند."""
+    clean = _clean_username(username).lower()
+    if not clean:
+        return
+    conn.execute(
+        "INSERT OR REPLACE INTO blocked_channels (username, reason) VALUES (?, ?)",
+        (clean, reason),
+    )
+    conn.commit()
+
+
+def unblock_channel(conn: sqlite3.Connection, username: str) -> None:
+    conn.execute("DELETE FROM blocked_channels WHERE username = ?", (_clean_username(username).lower(),))
+    conn.commit()
+
+
+def is_channel_blocked(conn: sqlite3.Connection, username: str) -> bool:
+    row = conn.execute(
+        "SELECT 1 FROM blocked_channels WHERE username = ?", (_clean_username(username).lower(),)
+    ).fetchone()
+    return row is not None
+
+
 def add_channel(
     conn: sqlite3.Connection,
     username: str,
@@ -468,6 +498,9 @@ def add_channel(
     clean = _clean_username(username)
     if not clean:
         return None
+    # افزودن عمدی (پنل/ربات/CLI) یعنی دیگر مسدود نیست. کشف خودکار قبل از
+    # صدا زدن این تابع خودش is_channel_blocked را چک می‌کند.
+    unblock_channel(conn, clean)
     priority_value = 1 if priority else 0
     try:
         cursor = conn.execute(
