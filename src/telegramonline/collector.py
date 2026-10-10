@@ -152,6 +152,15 @@ async def forwarded_channel_origin(client: TelegramClient, message) -> tuple[str
     fwd = getattr(message, "fwd_from", None)
     if fwd is None:
         return None, None
+    # روش اول (مطمئن‌تر): Telethon موجودیتِ کانال مبدأ را از خودِ همان پیام/آپدیت
+    # می‌دهد (message.forward.chat) و نیازی به access_hash در کش session نیست.
+    # روش قدیمی (get_entity روی PeerChannel) برای کانالی که قبلاً ندیده بودیم
+    # ValueError می‌داد و نتیجه «۰ کانال کشف‌شده» می‌شد.
+    forward = getattr(message, "forward", None)
+    chat = getattr(forward, "chat", None) if forward is not None else None
+    chat_username = getattr(chat, "username", None) if chat is not None else None
+    if chat_username:
+        return chat_username, getattr(chat, "title", None)
     for peer in (getattr(fwd, "from_id", None), getattr(fwd, "saved_from_peer", None)):
         if isinstance(peer, PeerChannel):
             username, title = await _entity_username(client, peer)
@@ -545,6 +554,9 @@ async def source_group_sync_loop(client: TelegramClient, conn, known_groups: set
             print(f"source group sync error: {exc}", flush=True)
 
 
+_unresolved_forward_logs: int = 0  # برای اینکه لاگ دیباگ شلوغ نشود (فقط ۱۵ بار در هر اجرا)
+
+
 async def discover_forwarded_channel_from_group(
     client: TelegramClient,
     conn,
@@ -553,8 +565,19 @@ async def discover_forwarded_channel_from_group(
     message,
     client2: TelegramClient | None = None,
 ) -> None:
+    global _unresolved_forward_logs
     origin_username, origin_title = await forwarded_channel_origin(client, message)
-    if not origin_username or origin_username in known_channels:
+    if not origin_username:
+        fwd = getattr(message, "fwd_from", None)
+        if fwd is not None and _unresolved_forward_logs < 15:
+            _unresolved_forward_logs += 1
+            print(
+                f"🔎 فوروارد در گروه {group_username} دیده شد ولی یوزرنیم کانال مبدأ قابل تشخیص نبود "
+                f"(کانال خصوصی/بدون یوزرنیم یا فوروارد از کاربر).",
+                flush=True,
+            )
+        return
+    if origin_username in known_channels:
         return
     if is_channel_blocked(conn, origin_username):
         return
