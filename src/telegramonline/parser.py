@@ -302,6 +302,10 @@ def _clean_detected_vehicle_name(text: str, fallback: str, matched_pattern: str 
     return display.translate(str.maketrans("0123456789", "۰۱۲۳۴۵۶۷۸۹"))
 
 BUYER_RE = re.compile(r"خریدار|خریدارم|می\s*خوام|میخوام|مشتری|نیاز\s*دارم")
+# «با خریدار / به عهده‌ی خریدار / هزینه با خریدار» یعنی شرایط فروش، نه آگهی خریدار
+BUYER_TERMS_RE = re.compile(
+    r"(?:با|به\s*عهد[هٔ]?(?:[\s‌]*ی)?|بر\s*عهد[هٔ]?(?:[\s‌]*ی)?|عهد[هٔ](?:[\s‌]*ی)?|از\s*طرف|طرف|پای|پیش)\s*(?:ی\s*)?خریدار(?:\s*(?:می\s*باشد|میباشد|هست|است))?"
+)
 SOLD_RE = re.compile(r"انجام\s*شد|فروخته|تمام\s*شد|تموم\s*شد|اوکی\s*شد")
 SPAM_RE = re.compile(
     r"بازدید|ربات|تبلیغ|کانال\s*(?:واتساپ|روبیکا|تلگرام)|https?://|t\.me/|"
@@ -579,7 +583,7 @@ def detect_delivery(text: str) -> str | None:
 def classify_status(text: str, vehicle_key: str | None) -> str:
     if SOLD_RE.search(text):
         return "sold"
-    if BUYER_RE.search(text):
+    if BUYER_RE.search(BUYER_TERMS_RE.sub(" ", text)):
         return "buyer"
     if ACCESSORY_SPAM_RE.search(text):
         return "spam"
