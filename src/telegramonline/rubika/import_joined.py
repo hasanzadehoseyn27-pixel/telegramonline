@@ -4,6 +4,7 @@
     $env:PYTHONPATH="src"
     venv\\Scripts\\python -m telegramonline.rubika.import_joined          # افزودن همه + آمار
     venv\\Scripts\\python -m telegramonline.rubika.import_joined --stats  # فقط آمار
+    venv\\Scripts\\python -m telegramonline.rubika.import_joined --groups # فهرست گروه‌ها
 
 کانال‌ها «عضو شده» ثبت می‌شوند؛ جمع‌کننده (rubika-collector) بعد از ری‌استارت
 آگهی‌های امروزشان را جمع می‌کند (و به سایت می‌فرستد) و از آن به بعد زنده پایش می‌کند.
@@ -26,8 +27,8 @@ from .client import RubikaAccount, RubikaFlood, _find
 TEHRAN = timezone(timedelta(hours=3, minutes=30))
 
 
-async def joined_channels(account: RubikaAccount) -> list[dict]:
-    """[{guid, title}] همه‌ی کانال‌های چت‌لیست اکانت (صفحه به صفحه)."""
+async def joined_chats(account: RubikaAccount, prefix: str, kinds: tuple[str, ...]) -> list[dict]:
+    """[{guid, title}] همه‌ی چت‌های اکانت با این نوع (صفحه به صفحه)."""
     out: dict[str, dict] = {}
     start_id = None
     for _ in range(200):
@@ -36,12 +37,23 @@ async def joined_channels(account: RubikaAccount) -> list[dict]:
             abs_obj = chat.get("abs_object") or {}
             guid = str(chat.get("object_guid") or abs_obj.get("object_guid") or "")
             kind = str(abs_obj.get("type") or "")
-            if guid.startswith("c0") and (kind in ("", "Channel")):
+            if guid.startswith(prefix) and (kind in ("",) + kinds):
                 out[guid] = {"guid": guid, "title": str(abs_obj.get("title") or "")}
         start_id = res.get("next_start_id")
         if not res.get("has_continue") or not start_id:
             break
     return list(out.values())
+
+
+async def joined_channels(account: RubikaAccount) -> list[dict]:
+    return await joined_chats(account, "c0", ("Channel",))
+
+
+async def list_groups(account: RubikaAccount) -> None:
+    groups = await joined_chats(account, "g0", ("Group",))
+    print(f"👥 اکانت در {len(groups)} گروه روبیکا عضو است:", flush=True)
+    for i, g in enumerate(sorted(groups, key=lambda x: x["title"]), start=1):
+        print(f"  {i:>3}. {g['title'] or '-'} ({g['guid']})", flush=True)
 
 
 async def import_all(conn: sqlite3.Connection, account: RubikaAccount) -> None:
@@ -102,8 +114,16 @@ def print_stats(conn: sqlite3.Connection) -> None:
         print(f"  {i:>3}. {int(r['relevant'] or 0):>4} آگهی | {r['title'] or '-'} ({r['username']})", flush=True)
 
 
-async def _main(stats_only: bool) -> None:
+async def _main(stats_only: bool, groups_only: bool = False) -> None:
     load_dotenv()
+    if groups_only:
+        account = RubikaAccount(Path(os.getenv("RUBIKA_SESSION", "data/rubika")))
+        await account.connect()
+        try:
+            await list_groups(account)
+        finally:
+            await account.disconnect()
+        return
     conn = connect(Path(os.getenv("RUBIKA_DATABASE_PATH", "data/rubikaonline.sqlite3")))
     if not stats_only:
         account = RubikaAccount(Path(os.getenv("RUBIKA_SESSION", "data/rubika")))
@@ -124,8 +144,9 @@ def main() -> None:
     logging.getLogger("rubpy").setLevel(logging.WARNING)
     parser = argparse.ArgumentParser()
     parser.add_argument("--stats", action="store_true", help="فقط آمار آگهی‌های امروز هر کانال")
+    parser.add_argument("--groups", action="store_true", help="فقط فهرست گروه‌هایی که اکانت عضوشان است")
     args = parser.parse_args()
-    asyncio.run(_main(args.stats))
+    asyncio.run(_main(args.stats, args.groups))
 
 
 if __name__ == "__main__":
