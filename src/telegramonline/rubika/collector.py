@@ -160,6 +160,10 @@ class RubikaCollector:
             print("ℹ️ ارسال در گروه روبیکا خاموش است (RUBIKA_FORWARD_GROUP یا توکن ربات‌ها تنظیم نشده).", flush=True)
         if not self.push_to_site:
             print("ℹ️ ارسال به سایت خاموش است (RUBIKA_PUSH_TO_SITE=0).", flush=True)
+        elif not (os.getenv("CARX_API_URL", "").strip() and os.getenv("CARX_IMPORT_API_KEY", "").strip()):
+            print("⚠️ RUBIKA_PUSH_TO_SITE=1 است ولی CARX_API_URL / CARX_IMPORT_API_KEY تنظیم نشده — آگهی‌ها به سایت نمی‌روند.", flush=True)
+        else:
+            print(f"🌐 ارسال آگهی‌های روبیکا به سایت روشن است: {os.getenv('CARX_API_URL', '').strip()}", flush=True)
 
         deleted = purge_old_ads(self.conn)
         if deleted:
