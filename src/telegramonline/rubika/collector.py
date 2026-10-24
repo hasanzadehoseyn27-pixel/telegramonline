@@ -53,7 +53,7 @@ from .client import RubikaAccount, RubikaFlood, RubikaMessage, is_guid
 
 TEHRAN = timezone(timedelta(hours=3, minutes=30))
 DISCOVERY_JOIN_GAP_SECONDS = 30
-SWEEP_SECONDS = 120
+SWEEP_SECONDS = 60
 
 STATE_SCHEMA = """
 CREATE TABLE IF NOT EXISTS rubika_peers (
@@ -332,6 +332,14 @@ class RubikaCollector:
         ads = parse_message_group(str(msg.id), msg.text, msg.date, source="live" if live else "backfill")
         saved = save_rubika_ads(self.conn, ads, channel["id"], username)
         relevant = [a for a in saved if a["status"] in ("sale", "buyer", "call_price")]
+        if live:
+            preview = " ".join((msg.text or "").split())[:50]
+            if not saved:
+                print(f"📩 [{username}] پیام {msg.id}: تکراری بود (همین متن امروز قبلاً آمده) — رد شد | {preview}", flush=True)
+            elif not relevant:
+                print(f"📩 [{username}] پیام {msg.id}: آگهی خودرو تشخیص داده نشد — رد شد | {preview}", flush=True)
+            else:
+                print(f"📩 [{username}] پیام {msg.id}: {len(relevant)} آگهی ← گروه روبیکا | {preview}", flush=True)
         if not relevant:
             return 0
         title = (channel["title"] or "").strip() or username

@@ -65,6 +65,7 @@ async def _worker(index: int, token: str, queue: asyncio.Queue) -> None:
                     continue
                 status = str(data.get("status") or "")
                 if status == "OK":
+                    print(f"✅ {tag} آگهی را در گروه گذاشت.", flush=True)
                     break
                 if status in ("TOO_REQUESTS", "TOO_REQUEST"):
                     print(f"⏳ {tag} محدودیت ارسال گرفت؛ ۳۰ ثانیه صبر.", flush=True)
