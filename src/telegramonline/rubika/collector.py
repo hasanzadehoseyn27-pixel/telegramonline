@@ -392,7 +392,10 @@ class RubikaCollector:
         while True:
             try:
                 now = time.monotonic()
-                full = now - last_sweep >= SWEEP_SECONDS
+                # دور کامل (پشتیبانِ getChatsUpdates): با تعداد کانال‌ها کندتر می‌شود
+                # تا با صدها کانال، روبیکا محدودیت ندهد (هر کانال ≈ ۲ درخواست)
+                sweep_every = max(SWEEP_SECONDS, len(self.watch) * 3)
+                full = now - last_sweep >= sweep_every
                 await self.poll_once(full=full)
                 if full:
                     last_sweep = now
