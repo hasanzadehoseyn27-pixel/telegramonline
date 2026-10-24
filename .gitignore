@@ -18,3 +18,7 @@ node_modules/
 *.sqlite3-shm
 
 bot_tokens.txt
+
+# Rubika
+*.rp
+rubika_bot_tokens.txt
