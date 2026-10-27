@@ -54,6 +54,7 @@ from .client import RubikaAccount, RubikaFlood, RubikaMessage, is_guid
 TEHRAN = timezone(timedelta(hours=3, minutes=30))
 DISCOVERY_JOIN_GAP_SECONDS = 30
 SWEEP_SECONDS = 60
+MIN_CAR_ADS_TO_DISCOVER = 2
 
 STATE_SCHEMA = """
 CREATE TABLE IF NOT EXISTS rubika_peers (
@@ -84,6 +85,26 @@ def _local_day(msg: RubikaMessage) -> str:
     return msg.date.astimezone(TEHRAN).date().isoformat()
 
 
+def is_car_ad(row) -> bool:
+    """آگهی واقعی خودرو: مدل خودرو تشخیص داده شده باشد.
+
+    پارسر تلگرام هر متنی را (حتی خبر سیاسی یا «تست») با status=sale برمی‌گرداند؛
+    در کانال‌های تلگرام که همه خودرویی‌اند مشکلی نبود، ولی در روبیکا از
+    کانال‌های خبری هم پیام می‌آمد و به‌عنوان آگهی در گروه می‌رفت.
+    """
+    try:
+        name = row["vehicle_name"]
+        key = row["vehicle_key"]
+        status = row["status"]
+    except (KeyError, IndexError, TypeError):
+        name = getattr(row, "vehicle_name", None)
+        key = getattr(row, "vehicle_key", None)
+        status = getattr(row, "status", None)
+    if status not in ("sale", "buyer", "call_price"):
+        return False
+    return bool(key or (name and str(name).strip() not in ("", "خودرو")))
+
+
 def channel_link(username: str) -> str:
     if not username or is_guid(username):
         return ""
@@ -107,6 +128,7 @@ class RubikaCollector:
         self.forward_group_guid = ""
         self.state: int | None = None
         self._last_discovery_join = 0.0
+        self._rejected: set[str] = set()
 
     # ---------------------------------------------------------------- state
 
@@ -335,7 +357,7 @@ class RubikaCollector:
             return 0
         ads = parse_message_group(str(msg.id), msg.text, msg.date, source="live" if live else "backfill")
         saved = save_rubika_ads(self.conn, ads, channel["id"], username)
-        relevant = [a for a in saved if a["status"] in ("sale", "buyer", "call_price")]
+        relevant = [a for a in saved if is_car_ad(a)]
         if live:
             preview = " ".join((msg.text or "").split())[:50]
             if not saved:
@@ -367,9 +389,22 @@ class RubikaCollector:
         guid = str(fwd.get("object_guid") or "")
         if not guid or guid in self.watch:
             return
+        if guid in self._rejected:
+            return
         info = await self.account.channel_info(guid)
         username = info.get("username") or guid
         if is_channel_blocked(self.conn, username) or get_channel_by_username(self.conn, username) is not None:
+            return
+        # فقط کانال‌های خودرویی: در ۳۰ پیام آخر دست‌کم ۲ آگهی خودرو باشد
+        # (کانال‌های خبری/سیاسی/سرگرمی که در گروه‌ها فوروارد می‌شوند رد می‌شوند)
+        car_ads = await self.count_car_ads(guid)
+        if car_ads < MIN_CAR_ADS_TO_DISCOVER:
+            self._rejected.add(guid)
+            print(
+                f"🙅 کانال {username} ({info.get('title') or '-'}) از گروه پیمایش رد شد: "
+                f"خودرویی نیست ({car_ads} آگهی خودرو در ۳۰ پیام آخر).",
+                flush=True,
+            )
             return
         channel_id = add_channel(self.conn, username, title=info.get("title") or None)
         if channel_id is None:
@@ -381,6 +416,16 @@ class RubikaCollector:
         if time.monotonic() - self._last_discovery_join >= DISCOVERY_JOIN_GAP_SECONDS:
             self._last_discovery_join = time.monotonic()
             await self.sync()
+
+    async def count_car_ads(self, guid: str, sample: int = 30) -> int:
+        msgs = await self.account.latest(guid, sample)
+        count = 0
+        for m in msgs:
+            if m.sticker is not None or not (m.text or "").strip():
+                continue
+            if any(is_car_ad(ad) for ad in parse_message_group(str(m.id), m.text, m.date, source="check")):
+                count += 1
+        return count
 
     # ----------------------------------------------------------------- run
 
