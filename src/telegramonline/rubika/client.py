@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import re
 import time
 from dataclasses import dataclass, field
@@ -150,6 +151,12 @@ class RubikaAccount:
         self.guid: str = ""
         self._peer_cache: dict[str, str] = {}
         self._title_cache: dict[str, str] = {}
+        # آخرین شناسه‌ی پیام هر چت، از getChats/getChatsUpdates (بدون getChannelInfo)
+        self._last_ids: dict[str, int] = {}
+        # فاصله‌ی حداقل بین درخواست‌ها تا روبیکا TOO_REQUESTS ندهد
+        self.min_gap = float(os.getenv("RUBIKA_MIN_GAP_SECONDS", "0.8") or 0.8)
+        self._next_call = 0.0
+        self._call_lock = asyncio.Lock()
 
     # ------------------------------------------------------------ lifecycle
 
@@ -182,6 +189,11 @@ class RubikaAccount:
     async def _call(self, method: str, data: dict) -> dict:
         from rubpy import exceptions
 
+        async with self._call_lock:
+            wait = self._next_call - time.monotonic()
+            if wait > 0:
+                await asyncio.sleep(wait)
+            self._next_call = time.monotonic() + self.min_gap
         try:
             result = await self.client.builder(method, input=data, dict=True)
         except exceptions.TooRequests as exc:
@@ -299,6 +311,9 @@ class RubikaAccount:
         """
         if getattr(self, "_top_ok", None) is not False:
             return _TOP_MESSAGE_ID
+        cached = self._last_ids.get(guid)
+        if cached:
+            return str(int(cached) + 1)
         try:
             info = await self._info(guid)
             last = _find(info, ["last_message_id"])
@@ -468,12 +483,35 @@ class RubikaAccount:
         data = {"state": int(state if state is not None else time.time() - 150)}
         res = await self._call("getChatsUpdates", data)
         chats = [c for c in (res.get("chats") or []) if isinstance(c, dict)]
+        self._remember_chats(chats)
         new_state = res.get("new_state")
         try:
             new_state = int(new_state) if new_state is not None else None
         except (TypeError, ValueError):
             new_state = None
         return chats, new_state
+
+    def _remember_chats(self, chats: list[dict]) -> None:
+        for chat in chats:
+            guid = str(chat.get("object_guid") or (chat.get("abs_object") or {}).get("object_guid") or "")
+            last = chat.get("last_message_id") or (chat.get("last_message") or {}).get("message_id")
+            try:
+                last = int(last)
+            except (TypeError, ValueError):
+                continue
+            if guid and last > self._last_ids.get(guid, 0):
+                self._last_ids[guid] = last
+
+    async def prime_last_ids(self, pages: int = 40) -> int:
+        """آخرین پیام همه‌ی چت‌ها با چند getChats (به‌جای یک getChannelInfo برای هر کانال)."""
+        start_id = None
+        for _ in range(pages):
+            res = await self._call("getChats", {"start_id": start_id} if start_id else {})
+            self._remember_chats([c for c in (res.get("chats") or []) if isinstance(c, dict)])
+            start_id = res.get("next_start_id")
+            if not res.get("has_continue") or not start_id:
+                break
+        return len(self._last_ids)
 
     async def channel_info(self, guid: str) -> dict:
         """{guid, username, title} برای کانال/گروه."""

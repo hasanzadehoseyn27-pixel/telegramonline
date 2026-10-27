@@ -129,6 +129,9 @@ class RubikaCollector:
         self.state: int | None = None
         self._last_discovery_join = 0.0
         self._rejected: set[str] = set()
+        # کانال‌هایی که باید خوانده شوند؛ اگر وسط کار محدودیت آمد، از همین‌جا ادامه می‌دهیم
+        # (قبلاً کل دور از اول شروع می‌شد و کانال‌های آخر لیست هیچ‌وقت خوانده نمی‌شدند)
+        self._pending: list[str] = []
 
     # ---------------------------------------------------------------- state
 
@@ -162,6 +165,13 @@ class RubikaCollector:
         await self.account.connect()
         me = await self.account.get_me()
         print(f"📱 اکانت روبیکا وصل شد: {me.first_name or me.username} ({me.id})", flush=True)
+        prime = getattr(self.account, "prime_last_ids", None)
+        if prime is not None:
+            try:
+                n = await prime()
+                print(f"📋 آخرین پیام {n} چت گرفته شد.", flush=True)
+            except Exception as exc:  # noqa: BLE001
+                print(f"ℹ️ گرفتن فهرست چت‌ها نشد: {exc}", flush=True)
 
         for username in _csv("RUBIKA_CHANNELS"):
             if get_channel_by_username(self.conn, username) is None:
@@ -308,28 +318,38 @@ class RubikaCollector:
     # ----------------------------------------------------------------- live
 
     async def poll_once(self, full: bool = False) -> None:
-        targets: set[str] = set()
-        if full or self.state is None:
-            targets = set(self.watch)
-        else:
+        urgent: list[str] = []
+        if self.state is not None:
             chats, new_state = await self.account.get_chats_updates(self.state)
             if new_state:
                 self.state = new_state
             for chat in chats:
                 guid = str(chat.get("object_guid") or "")
-                if guid in self.watch:
-                    targets.add(guid)
-        for guid in targets:
+                if guid in self.watch and guid not in urgent:
+                    urgent.append(guid)
+        if full or self.state is None:
+            rest = [g for g in self.watch if g not in urgent and g not in self._pending]
+        else:
+            rest = []
+        # تازه‌ها اول، بعد باقی‌مانده‌ی دور قبل، بعد دور کامل
+        self._pending = urgent + [g for g in self._pending if g not in urgent] + rest
+        while self._pending:
+            guid = self._pending[0]
+            if guid not in self.watch:
+                self._pending.pop(0)
+                continue
             kind, username = self.watch[guid]
             peer = self._peer(username)
             last_id = int(peer["last_id"]) if peer else 0
             try:
                 msgs = await self.account.new_messages(guid, last_id) if last_id else await self.account.latest(guid, 1)
             except RubikaFlood:
-                raise
+                raise  # همین کانال اول صف می‌ماند و دور بعد از همین‌جا ادامه می‌دهیم
             except Exception as exc:  # noqa: BLE001
                 print(f"⚠️ خواندن {username} نشد: {exc}", flush=True)
+                self._pending.pop(0)
                 continue
+            self._pending.pop(0)
             if not last_id:
                 if msgs:
                     self._set_last(username, msgs[0].id)
