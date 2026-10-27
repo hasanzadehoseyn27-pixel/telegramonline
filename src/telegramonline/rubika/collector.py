@@ -54,6 +54,7 @@ from .client import RubikaAccount, RubikaFlood, RubikaMessage, is_guid
 TEHRAN = timezone(timedelta(hours=3, minutes=30))
 DISCOVERY_JOIN_GAP_SECONDS = 30
 SWEEP_SECONDS = 60
+DEFERRED_RETRY_SECONDS = 120
 MIN_CAR_ADS_TO_DISCOVER = 2
 
 STATE_SCHEMA = """
@@ -132,6 +133,11 @@ class RubikaCollector:
         # کانال‌هایی که باید خوانده شوند؛ اگر وسط کار محدودیت آمد، از همین‌جا ادامه می‌دهیم
         # (قبلاً کل دور از اول شروع می‌شد و کانال‌های آخر لیست هیچ‌وقت خوانده نمی‌شدند)
         self._pending: list[str] = []
+        # کانال‌هایی که بررسی‌شان به محدودیت روبیکا خورد: guid → (لینک گروه، پیام)
+        # بعداً آرام‌آرام دوباره بررسی می‌شوند؛ قبلاً همین یک پیام هر دقیقه دوباره
+        # خوانده می‌شد و دوباره محدودیت می‌گرفت و کل جمع‌کننده را می‌خواباند.
+        self._deferred: dict[str, tuple[str, RubikaMessage]] = {}
+        self._last_deferred_try = 0.0
 
     # ---------------------------------------------------------------- state
 
@@ -409,15 +415,23 @@ class RubikaCollector:
         guid = str(fwd.get("object_guid") or "")
         if not guid or guid in self.watch:
             return
-        if guid in self._rejected:
+        if guid in self._rejected or is_channel_blocked(self.conn, guid):
             return
-        info = await self.account.channel_info(guid)
-        username = info.get("username") or guid
-        if is_channel_blocked(self.conn, username) or get_channel_by_username(self.conn, username) is not None:
+        try:
+            info = await self.account.channel_info(guid)
+            username = info.get("username") or guid
+            if is_channel_blocked(self.conn, username) or get_channel_by_username(self.conn, username) is not None:
+                self._deferred.pop(guid, None)
+                return
+            # فقط کانال‌های خودرویی: در ۳۰ پیام آخر دست‌کم ۲ آگهی خودرو باشد
+            # (کانال‌های خبری/سیاسی/سرگرمی که در گروه‌ها فوروارد می‌شوند رد می‌شوند)
+            car_ads = await self.count_car_ads(guid)
+        except RubikaFlood:
+            if guid not in self._deferred:
+                print(f"⏳ بررسی کانال تازه‌ی {guid} به محدودیت روبیکا خورد؛ بعداً دوباره.", flush=True)
+            self._deferred[guid] = (group_link, msg)
             return
-        # فقط کانال‌های خودرویی: در ۳۰ پیام آخر دست‌کم ۲ آگهی خودرو باشد
-        # (کانال‌های خبری/سیاسی/سرگرمی که در گروه‌ها فوروارد می‌شوند رد می‌شوند)
-        car_ads = await self.count_car_ads(guid)
+        self._deferred.pop(guid, None)
         if car_ads < MIN_CAR_ADS_TO_DISCOVER:
             self._rejected.add(guid)
             print(
@@ -467,6 +481,11 @@ class RubikaCollector:
                 if now - last_sync >= 30:
                     await self.sync()
                     last_sync = now
+                if self._deferred and now - self._last_deferred_try >= DEFERRED_RETRY_SECONDS:
+                    self._last_deferred_try = now
+                    guid, (link, msg) = next(iter(self._deferred.items()))
+                    self._deferred.pop(guid)
+                    await self.discover_from_group(link, msg)
                 if _today() != last_purge_day:
                     last_purge_day = _today()
                     deleted = purge_old_ads(self.conn)

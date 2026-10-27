@@ -157,6 +157,9 @@ class RubikaAccount:
         self.min_gap = float(os.getenv("RUBIKA_MIN_GAP_SECONDS", "0.8") or 0.8)
         self._next_call = 0.0
         self._call_lock = asyncio.Lock()
+        # متدی که تازه محدودیت گرفته تا مدتی اصلاً فرستاده نمی‌شود (ارسال دوباره
+        # فقط محدودیت را طولانی‌تر می‌کند)
+        self._cooldown: dict[str, float] = {}
 
     # ------------------------------------------------------------ lifecycle
 
@@ -189,6 +192,9 @@ class RubikaAccount:
     async def _call(self, method: str, data: dict) -> dict:
         from rubpy import exceptions
 
+        until = self._cooldown.get(method, 0.0)
+        if until > time.monotonic():
+            raise _flood_error(max(5, int(until - time.monotonic())))
         async with self._call_lock:
             wait = self._next_call - time.monotonic()
             if wait > 0:
@@ -203,6 +209,7 @@ class RubikaAccount:
                 # همین کلاس می‌دهد؛ آن‌ها محدودیت نیستند و نباید ۶۰ ثانیه منتظر بمانیم
                 raise RuntimeError(f"{method}: {detail}") from exc
             log.warning("روبیکا برای %s محدودیت داد (TOO_REQUESTS).", method)
+            self._cooldown[method] = time.monotonic() + 60
             raise _flood_error(60) from exc
         return result or {}
 
@@ -516,6 +523,12 @@ class RubikaAccount:
     async def channel_info(self, guid: str) -> dict:
         """{guid, username, title} برای کانال/گروه."""
         info = await self._info(guid)
+        last = _find(info, ["last_message_id"])
+        try:
+            if last and int(last) > self._last_ids.get(guid, 0):
+                self._last_ids[guid] = int(last)
+        except (TypeError, ValueError):
+            pass
         return {
             "guid": guid,
             "username": str(_find(info, ["username"]) or ""),
