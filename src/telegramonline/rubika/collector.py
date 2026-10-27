@@ -55,6 +55,8 @@ TEHRAN = timezone(timedelta(hours=3, minutes=30))
 DISCOVERY_JOIN_GAP_SECONDS = 30
 SWEEP_SECONDS = 60
 DEFERRED_RETRY_SECONDS = 120
+# بیوی کانال‌ها (برای سایت لیست شماره‌ها): هر ۹۰ ثانیه یک کانال
+BIO_INTERVAL_SECONDS = 90
 MIN_CAR_ADS_TO_DISCOVER = 2
 
 STATE_SCHEMA = """
@@ -138,6 +140,7 @@ class RubikaCollector:
         # خوانده می‌شد و دوباره محدودیت می‌گرفت و کل جمع‌کننده را می‌خواباند.
         self._deferred: dict[str, tuple[str, RubikaMessage]] = {}
         self._last_deferred_try = 0.0
+        self._last_bio = time.monotonic()
 
     # ---------------------------------------------------------------- state
 
@@ -451,6 +454,29 @@ class RubikaCollector:
             self._last_discovery_join = time.monotonic()
             await self.sync()
 
+    async def fetch_one_bio(self) -> None:
+        """بیوی یک کانال (قدیمی‌ترین/بی‌بیو) را می‌گیرد؛ محدودیت فقط این کار را عقب می‌اندازد."""
+        from ..bios import ensure_bio_schema, next_channel_for_bio, save_bio
+
+        ensure_bio_schema(self.conn)
+        ch = next_channel_for_bio(self.conn)
+        if ch is None:
+            return
+        username = ch["username"]
+        peer = self._peer(username)
+        guid = peer["guid"] if peer and peer["guid"] else (username if is_guid(username) else "")
+        if not guid:
+            return
+        try:
+            info = await self.account.channel_info(guid)
+        except RubikaFlood:
+            return
+        except Exception:  # noqa: BLE001
+            info = {}
+        phones = save_bio(self.conn, username, info.get("about") or "")
+        if phones:
+            print(f"📇 بیوی {username}: {', '.join(phones)}", flush=True)
+
     async def count_car_ads(self, guid: str, sample: int = 30) -> int:
         msgs = await self.account.latest(guid, sample)
         count = 0
@@ -481,6 +507,9 @@ class RubikaCollector:
                 if now - last_sync >= 30:
                     await self.sync()
                     last_sync = now
+                if now - self._last_bio >= BIO_INTERVAL_SECONDS:
+                    self._last_bio = now
+                    await self.fetch_one_bio()
                 if self._deferred and now - self._last_deferred_try >= DEFERRED_RETRY_SECONDS:
                     self._last_deferred_try = now
                     guid, (link, msg) = next(iter(self._deferred.items()))

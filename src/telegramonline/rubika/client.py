@@ -533,6 +533,7 @@ class RubikaAccount:
             "guid": guid,
             "username": str(_find(info, ["username"]) or ""),
             "title": str(_find(info, ["channel_title", "group_title", "title"]) or ""),
+            "about": str(_find(info, ["description"]) or ""),
         }
 
     async def join_channel(self, guid: str) -> None:

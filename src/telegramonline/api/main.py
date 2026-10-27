@@ -11,6 +11,7 @@ from telegramonline.api.routes import (
     alerts,
     auth,
     blocked_channels,
+    channel_bios,
     channels,
     channel_monitor,
     channels_live,
@@ -81,6 +82,7 @@ app.include_router(channel_monitor.router, prefix="/api")
 app.include_router(source_groups.router, prefix="/api")
 app.include_router(rubika_source_groups.router, prefix="/api")
 app.include_router(blocked_channels.router, prefix="/api")
+app.include_router(channel_bios.router, prefix="/api")
 app.include_router(reports.router, prefix="/api")
 app.include_router(filters.router, prefix="/api")
 app.include_router(alerts.router, prefix="/api")

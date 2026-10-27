@@ -639,6 +639,48 @@ async def midnight_purge_loop(conn) -> None:
             print(f"⚠️ خطا در پاک‌سازی شبانه: {exc}", flush=True)
 
 
+BIO_INTERVAL_SECONDS = 20
+
+
+async def channel_bio_loop(client: TelegramClient, client2: TelegramClient | None, conn) -> None:
+    """بیوی کانال‌ها را آرام (هر ۲۰ ثانیه یک کانال) می‌خواند و شماره‌هایش را
+    برای سایت لیست شماره‌ها ذخیره می‌کند. هر بیو چند روز یک بار تازه می‌شود."""
+    from telethon.tl.functions.channels import GetFullChannelRequest
+
+    from .bios import ensure_bio_schema, next_channel_for_bio, save_bio
+
+    ensure_bio_schema(conn)
+    await asyncio.sleep(120)  # اول کار، فشار روی اکانت‌ها نیاید
+    while True:
+        try:
+            ch = next_channel_for_bio(conn)
+            if ch is None:
+                await asyncio.sleep(3600)
+                continue
+            username = ch["username"]
+            use = client2 if (client2 is not None and int(ch["account"] or 1) == 2) else client
+            try:
+                full = await use(GetFullChannelRequest(channel=username))
+                about = getattr(full.full_chat, "about", "") or ""
+            except FloodWaitError:
+                raise
+            except Exception as exc:  # noqa: BLE001
+                # کانال در دسترس نیست/یوزرنیم عوض شده: خالی ثبت می‌شود تا دوباره نوبتش برسد
+                about = ""
+                print(f"ℹ️ بیوی {username} گرفته نشد: {type(exc).__name__}", flush=True)
+            phones = save_bio(conn, username, about)
+            if phones:
+                print(f"📇 بیوی {username}: {', '.join(phones)}", flush=True)
+            await asyncio.sleep(BIO_INTERVAL_SECONDS)
+        except FloodWaitError as exc:
+            wait = int(getattr(exc, "seconds", 60)) + 30
+            print(f"⏳ گرفتن بیوی کانال‌ها محدودیت خورد؛ {wait} ثانیه صبر.", flush=True)
+            await asyncio.sleep(wait)
+        except Exception:  # noqa: BLE001
+            traceback.print_exc()
+            await asyncio.sleep(60)
+
+
 async def live_collect() -> None:
     settings = Settings.from_env()
     conn = connect(settings.database_path)
@@ -739,6 +781,7 @@ async def live_collect() -> None:
     asyncio.create_task(source_group_sync_loop(client, conn, known_groups, client2=client2))
     asyncio.create_task(midnight_purge_loop(conn))
     asyncio.create_task(periodic_backfill_loop(client, client2, conn, settings))
+    asyncio.create_task(channel_bio_loop(client, client2, conn))
     print("telegramonline collector is running.")
 
     if client2 is not None:
