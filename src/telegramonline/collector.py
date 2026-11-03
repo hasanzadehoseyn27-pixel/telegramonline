@@ -18,7 +18,7 @@ import traceback
 from datetime import datetime, timedelta, timezone
 
 from telethon import TelegramClient, events
-from telethon.errors import ChannelPrivateError, FloodWaitError, UserAlreadyParticipantError, UserNotParticipantError
+from telethon.errors import ChannelPrivateError, ChannelsTooMuchError, FloodWaitError, UserAlreadyParticipantError, UserNotParticipantError
 from telethon.tl.functions.channels import JoinChannelRequest, LeaveChannelRequest
 from telethon.tl.types import PeerChannel
 
@@ -61,6 +61,36 @@ from .storage import (
 
 CHANNEL_SYNC_INTERVAL_SECONDS = 30
 
+# اکانت‌های اضافه (۲، ۳، ...) — شماره‌ی اکانت ← کلاینت. کانال‌های تازه اول روی
+# جدیدترین اکانتی که جا دارد عضو می‌شوند؛ اکانتی که پر شده (سقف کانال تلگرام)
+# یا محدودیت گرفته رد می‌شود و نوبت اکانت قبلی است. اکانت ۱ همیشه آخرین گزینه است.
+EXTRA_ACCOUNTS: dict[int, TelegramClient] = {}
+_FULL_ACCOUNTS: set[int] = set()
+# اکانت‌هایی که اگر session آن‌ها ساخته شده باشد وصل می‌شوند (setup_account.py <شماره>)
+MAX_ACCOUNTS = 6
+
+
+def client_for(account, client1: TelegramClient, client2: TelegramClient | None = None) -> TelegramClient:
+    """کلاینت اکانتی که این کانال/گروه رویش عضو است."""
+    try:
+        n = int(account or 1)
+    except (TypeError, ValueError):
+        n = 1
+    if n in EXTRA_ACCOUNTS:
+        return EXTRA_ACCOUNTS[n]
+    if n == 2 and client2 is not None:
+        return client2
+    return client1
+
+
+def all_clients(client1: TelegramClient, client2: TelegramClient | None = None) -> list[tuple[int, TelegramClient]]:
+    out = [(1, client1)]
+    if EXTRA_ACCOUNTS:
+        out += sorted(EXTRA_ACCOUNTS.items())
+    elif client2 is not None:
+        out.append((2, client2))
+    return out
+
 
 async def join_channel(client: TelegramClient, username: str, allow_group: bool = True) -> bool | str:
     """اکانت شخصی را عضو کانال عمومی می‌کند (لازم برای دریافت پیام‌های زنده).
@@ -83,9 +113,11 @@ async def join_channel(client: TelegramClient, username: str, allow_group: bool 
         return True
     except UserAlreadyParticipantError:
         return True
-    except FloodWaitError:
+    except (FloodWaitError, ChannelsTooMuchError):
         raise
     except Exception as exc:  # noqa: BLE001
+        if "CHANNELS_TOO_MUCH" in str(exc).upper():
+            raise ChannelsTooMuchError(request=None) from exc
         print(f"⚠️ نتوانستم عضو کانال {username} شوم: {exc}", flush=True)
         return False
 
@@ -96,32 +128,39 @@ async def join_channel_with_fallback(
     username: str,
     allow_group: bool = True,
 ) -> tuple[bool | str, int]:
-    """اول تلاش می‌کنه با اکانت دوم (شماره‌ی جدید) عضو بشه — چون کانال‌های
-    جدید از این به بعد باید رو اون شماره برن. اگه اکانت دوم محدودیت
-    (FloodWaitError) خورده باشه، به‌جای هدررفتن این کانال، فوراً با اکانت
-    اول (شماره‌ی قدیمی) امتحان می‌کنه.
+    """کانال تازه اول روی جدیدترین اکانت (مثلاً ۳، بعد ۲) عضو می‌شود و فقط اگر همه
+    پر یا محدود بودند روی اکانت اول. اکانتی که به سقف کانال تلگرام رسیده
+    (CHANNELS_TOO_MUCH) تا ری‌استارت بعدی کنار گذاشته می‌شود.
 
     برمی‌گردونه: (نتیجه‌ی join_channel، شماره‌ی اکانتی که موفق شد یا آخرین
     اکانتی که امتحان شد).
     """
-    if client2 is not None:
+    candidates = [(n, c) for n, c in all_clients(client1, client2) if n != 1]
+    candidates.sort(key=lambda x: -x[0])
+    for n, c in candidates:
+        if n in _FULL_ACCOUNTS:
+            continue
         try:
-            result = await join_channel(client2, username, allow_group=allow_group)
-            print(f"✅ اکانت دوم موفق شد کانال {username} رو join کنه.", flush=True)
-            return result, 2
+            result = await join_channel(c, username, allow_group=allow_group)
+            if result is True:
+                print(f"✅ اکانت {n} کانال {username} را join کرد.", flush=True)
+            return result, n
+        except ChannelsTooMuchError:
+            _FULL_ACCOUNTS.add(n)
+            print(f"📦 اکانت {n} پر شده (سقف کانال‌های تلگرام) — از این به بعد کانال تازه روی اکانت بعدی می‌رود.", flush=True)
         except FloodWaitError as exc:
-            print(
-                f"⏳ اکانت دوم محدودیت خورده ({exc.seconds} ثانیه) — کانال {username} رو با اکانت اول امتحان می‌کنیم.",
-                flush=True,
-            )
+            print(f"⏳ اکانت {n} محدودیت خورده ({exc.seconds} ثانیه) — کانال {username} با اکانت بعدی امتحان می‌شود.", flush=True)
         except Exception as exc:  # noqa: BLE001
-            print(
-                f"⚠️ اکانت دوم با خطای دیگه‌ای مواجه شد ({type(exc).__name__}: {exc}) — کانال {username} رو با اکانت اول امتحان می‌کنیم.",
-                flush=True,
-            )
-    else:
-        print(f"ℹ️ اکانت دوم در دسترس نیست، کانال {username} مستقیم با اکانت اول امتحان می‌شه.", flush=True)
-    result = await join_channel(client1, username, allow_group=allow_group)
+            print(f"⚠️ اکانت {n}: {type(exc).__name__}: {exc} — کانال {username} با اکانت بعدی امتحان می‌شود.", flush=True)
+    if 1 in _FULL_ACCOUNTS:
+        print(f"🛑 همه‌ی اکانت‌ها پر یا محدودند؛ کانال {username} فعلاً عضو نشد. یک اکانت تازه اضافه کن.", flush=True)
+        return False, 1
+    try:
+        result = await join_channel(client1, username, allow_group=allow_group)
+    except ChannelsTooMuchError:
+        _FULL_ACCOUNTS.add(1)
+        print(f"🛑 اکانت ۱ هم پر است؛ کانال {username} عضو نشد. یک اکانت تازه اضافه کن.", flush=True)
+        return False, 1
     return result, 1
 
 
@@ -298,14 +337,15 @@ async def periodic_backfill_loop(
         not_member: list[str] = []
         try:
             channels = list_active_joined_channels(conn)
-            members1 = await member_usernames(client)
-            members2 = await member_usernames(client2) if client2 is not None else set()
-            if members1 is None or members2 is None:
-                members = None
-            else:
-                members = members1 | members2
+            members: set[str] | None = set()
+            for _n, _c in all_clients(client, client2):
+                part = await member_usernames(_c)
+                if part is None:
+                    members = None
+                    break
+                members |= part
             for ch in channels:
-                use = client2 if (client2 is not None and ch["account"] == 2) else client
+                use = client_for(ch["account"], client, client2)
                 collected: list = []
                 if not is_member_of(members, ch["username"]):
                     not_member.append(ch["username"])
@@ -352,7 +392,7 @@ async def add_and_activate_channel(
     if joined == "group":
         deactivate_channel(conn, channel_id)
         return {"status": "rejected_group", "username": username, "channel_id": channel_id}
-    joining_client = client2 if used_account == 2 and client2 is not None else client
+    joining_client = client_for(used_account, client, client2)
     if joined:
         real_title = title
         try:
@@ -455,7 +495,7 @@ async def sync_channels(client: TelegramClient, conn, client2: TelegramClient | 
                 )
             break
         title = channel["title"]
-        joining_client = client2 if used_account == 2 and client2 is not None else client
+        joining_client = client_for(used_account, client, client2)
         try:
             entity = await joining_client.get_entity(username)
             title = getattr(entity, "title", None) or title
@@ -469,7 +509,7 @@ async def sync_channels(client: TelegramClient, conn, client2: TelegramClient | 
     for channel in list_channels_pending_leave(conn):
         username = channel["username"]
         print(f"🚪 در حال خروج از کانال {username}...", flush=True)
-        leave_client = client2 if (client2 is not None and channel["account"] == 2) else client
+        leave_client = client_for(channel["account"], client, client2)
         left = await leave_channel(leave_client, username)
         if left:
             deleted_ads = delete_ads_for_channel(conn, channel["id"])
@@ -510,7 +550,7 @@ async def sync_source_groups(client: TelegramClient, conn, client2: TelegramClie
                 print(f"source group join failed: {username} (attempt {attempts}/{MAX_JOIN_ATTEMPTS})", flush=True)
             break
         title = group["title"]
-        joining_client = client2 if used_account == 2 and client2 is not None else client
+        joining_client = client_for(used_account, client, client2)
         try:
             entity = await joining_client.get_entity(username)
             title = getattr(entity, "title", None) or title
@@ -522,7 +562,7 @@ async def sync_source_groups(client: TelegramClient, conn, client2: TelegramClie
 
     for group in list_source_groups_pending_leave(conn):
         username = group["username"]
-        leave_client = client2 if (client2 is not None and group["account"] == 2) else client
+        leave_client = client_for(group["account"], client, client2)
         left = await leave_channel(leave_client, username)
         if left:
             remove_source_group(conn, group["id"])
@@ -608,7 +648,7 @@ async def discover_forwarded_channel_from_group(
         return
     if not joined:
         return
-    joining_client = client2 if used_account == 2 and client2 is not None else client
+    joining_client = client_for(used_account, client, client2)
     mark_channel_joined(conn, channel_id, title=origin_title, account=used_account)
     known_channels.add(origin_username)
     inserted = await backfill_today(joining_client, conn, channel_id, origin_username)
@@ -658,7 +698,7 @@ async def channel_bio_loop(client: TelegramClient, client2: TelegramClient | Non
                 await asyncio.sleep(3600)
                 continue
             username = ch["username"]
-            use = client2 if (client2 is not None and int(ch["account"] or 1) == 2) else client
+            use = client_for(ch["account"], client, client2)
             try:
                 full = await use(GetFullChannelRequest(channel=username))
                 about = getattr(full.full_chat, "about", "") or ""
@@ -724,6 +764,38 @@ async def live_collect() -> None:
         print(f"⚠️ اکانت دوم وصل نشد ({exc}) — فقط اکانت اول برای join کانال‌های جدید استفاده می‌شه.", flush=True)
         client2 = None
 
+    if client2 is not None:
+        EXTRA_ACCOUNTS[2] = client2
+    # اکانت‌های ۳ به بعد: فقط اگر session آن‌ها از قبل ساخته شده باشد
+    # (py setup_account.py 3) — اینجا هیچ‌وقت شماره/کد نمی‌پرسد
+    from pathlib import Path as _Path
+
+    for n in range(3, MAX_ACCOUNTS + 1):
+        session = f"telegramonline_user_{n}"
+        if not _Path(f"{session}.session").exists():
+            continue
+        try:
+            extra = TelegramClient(
+                session,
+                settings.api_id,
+                settings.api_hash,
+                proxy=proxy,
+                connection_retries=None,
+                retry_delay=2,
+                auto_reconnect=True,
+                catch_up=True,
+            )
+            await extra.connect()
+            if not await extra.is_user_authorized():
+                print(f"⚠️ session اکانت {n} وارد نشده؛ اول اجرا کن: python setup_account.py {n}", flush=True)
+                await extra.disconnect()
+                continue
+            me_n = await extra.get_me()
+            EXTRA_ACCOUNTS[n] = extra
+            print(f"📱 اکانت {n} متصل شد: {me_n.phone} (@{me_n.username}) — کانال‌های تازه اول روی این می‌روند.", flush=True)
+        except Exception as exc:  # noqa: BLE001
+            print(f"⚠️ اکانت {n} وصل نشد ({exc}).", flush=True)
+
     deleted_on_start = purge_old_ads(conn)
     if deleted_on_start:
         print(f"🧹 پاک‌سازی ابتدای اجرا: {deleted_on_start} ردیف قدیمی حذف شد.", flush=True)
@@ -768,14 +840,17 @@ async def live_collect() -> None:
     async def edit_handler1(event) -> None:
         await _on_message(event, client)
 
-    if client2 is not None:
-        @client2.on(events.NewMessage)
-        async def handler2(event) -> None:
-            await _on_message(event, client2)
+    def _attach(extra_client: TelegramClient) -> None:
+        @extra_client.on(events.NewMessage)
+        async def _new(event) -> None:
+            await _on_message(event, extra_client)
 
-        @client2.on(events.MessageEdited)
-        async def edit_handler2(event) -> None:
-            await _on_message(event, client2)
+        @extra_client.on(events.MessageEdited)
+        async def _edit(event) -> None:
+            await _on_message(event, extra_client)
+
+    for _n, _c in sorted(EXTRA_ACCOUNTS.items()):
+        _attach(_c)
 
     asyncio.create_task(channel_sync_loop(client, conn, known, client2=client2))
     asyncio.create_task(source_group_sync_loop(client, conn, known_groups, client2=client2))
@@ -784,10 +859,7 @@ async def live_collect() -> None:
     asyncio.create_task(channel_bio_loop(client, client2, conn))
     print("telegramonline collector is running.")
 
-    if client2 is not None:
-        await asyncio.gather(client.run_until_disconnected(), client2.run_until_disconnected())
-    else:
-        await client.run_until_disconnected()
+    await asyncio.gather(*(c.run_until_disconnected() for _n, c in all_clients(client, client2)))
 
 
 async def _get_chat_safe(event, client: TelegramClient):
