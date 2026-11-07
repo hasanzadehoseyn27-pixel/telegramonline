@@ -26,7 +26,6 @@ from .config import Settings
 from .bot_forwarder import (
     build_message as build_bot_message,
     delete as delete_bot_message,
-    edit as edit_bot_message,
     enqueue as enqueue_bot_message,
     set_sent_callback,
 )
@@ -970,18 +969,25 @@ async def _handle_new_message(event, client, conn, known: set[str], known_groups
     if channel is None or not channel["active"]:
         return
     if isinstance(event, events.MessageEdited.Event) and settings is not None and settings.forward_bot_tokens:
-        # پست ویرایش شد: اگر قبلاً در گروه مقصد گذاشته شده، همان پیام گروه با متن تازه
-        # ویرایش می‌شود (پیام تازه ساخته نمی‌شود)
+        # پست ویرایش شد: نسخه‌ی ویرایش‌شده به‌صورت «پیام تازه» در گروه گذاشته می‌شود و
+        # کپی قبلیِ همان پست پاک می‌شود (تا از هر پست فقط آخرین نسخه در گروه بماند)
         _prev = get_group_forward(conn, username, event.message.id)
-        if _prev and _prev["bot_message_id"] and group_forward_edited(conn, username, event.message.id, event.message.message):
+        if _prev and group_forward_edited(conn, username, event.message.id, event.message.message):
+            if _prev["bot_message_id"]:
+                delete_bot_message(
+                    settings.forward_bot_tokens,
+                    settings.forward_target_group,
+                    _prev["bot_id"],
+                    int(_prev["bot_message_id"]),
+                )
             _title = (getattr(chat, "title", None) or "").strip() or (channel["title"] or "").strip() or f"@{username}"
-            edit_bot_message(
+            enqueue_bot_message(
                 settings.forward_bot_tokens,
                 settings.forward_target_group,
-                _prev["bot_id"],
-                int(_prev["bot_message_id"]),
                 build_bot_message(_title, f"https://t.me/{username}/{event.message.id}", event.message.message),
+                key=(username, event.message.id),
             )
+            print(f"✏️ پست {event.message.id} در {username} ویرایش شد؛ نسخه‌ی تازه در گروه گذاشته شد.", flush=True)
     ads = parse_message_group(str(event.message.id), event.message.message, event.message.date, source="live")
     saved_ads = save_ads(conn, ads, channel_id=channel["id"], channel_username=username)
 
