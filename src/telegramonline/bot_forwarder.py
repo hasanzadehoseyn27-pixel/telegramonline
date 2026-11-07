@@ -20,6 +20,14 @@ MAX_TEXT_LEN = 4000           # سقف تلگرام ۴۰۹۶ کاراکتره
 
 _queues: dict[str, asyncio.Queue] = {}
 _tasks: list[asyncio.Task] = []
+# بعد از ارسال موفق صدا زده می‌شود: (key, شناسه‌ی ربات, شناسه‌ی پیام در گروه)
+# تا بعداً با ویرایش/حذف پست در کانال، همان پیام گروه ویرایش/حذف شود.
+_on_sent = None
+
+
+def set_sent_callback(fn) -> None:
+    global _on_sent
+    _on_sent = fn
 
 
 def _normalize_chat(chat: str) -> str:
@@ -40,7 +48,8 @@ async def _worker(token: str, chat: str, queue: asyncio.Queue) -> None:
     tag = f"ربات {_short(token)}"
     async with httpx.AsyncClient(timeout=30) as http:
         while True:
-            text = await queue.get()
+            item = await queue.get()
+            text, key = item if isinstance(item, tuple) else (item, None)
             sent = False
             for _ in range(3):
                 try:
@@ -54,6 +63,12 @@ async def _worker(token: str, chat: str, queue: asyncio.Queue) -> None:
                     continue
                 if resp.status_code == 200:
                     sent = True
+                    if key is not None and _on_sent is not None:
+                        try:
+                            mid = int(resp.json()["result"]["message_id"])
+                            _on_sent(key, _short(token), mid)
+                        except Exception as exc:  # noqa: BLE001
+                            print(f"⚠️ ثبت شناسه‌ی پیام گروه نشد: {exc}", flush=True)
                     break
                 try:
                     data = resp.json()
@@ -69,7 +84,7 @@ async def _worker(token: str, chat: str, queue: asyncio.Queue) -> None:
                     # این ربات نمی‌تونه توی این گروه بنویسه (توکن باطل / عضو نیست / کیک شده):
                     # پیام رو برای ربات‌های دیگه برمی‌گردونیم و همین کارگر کنار می‌ره.
                     print(f"⚠️ {tag} کنار رفت ({resp.status_code}): {desc}", flush=True)
-                    queue.put_nowait(text)
+                    queue.put_nowait((text, key))
                     return
                 print(f"⚠️ ارسال {tag} به {chat} ناموفق بود ({resp.status_code}): {desc}", flush=True)
                 break
@@ -87,7 +102,7 @@ def build_message(title: str, source_url: str, body: str) -> str:
     return f"{head}\n\n{body}"
 
 
-def enqueue(tokens: str | Sequence[str], chat: str, text: str) -> None:
+def enqueue(tokens: str | Sequence[str], chat: str, text: str, key=None) -> None:
     """پیام (HTML) را در صف گروه می‌گذارد (غیر مسدودکننده). اگه توکن/گروه خالی باشه کاری نمی‌کنه."""
     if isinstance(tokens, str):
         tokens = [tokens]
@@ -107,4 +122,65 @@ def enqueue(tokens: str | Sequence[str], chat: str, text: str) -> None:
             queue.get_nowait()
         except asyncio.QueueEmpty:
             pass
-    queue.put_nowait(text)
+    queue.put_nowait((text, key))
+
+
+def _token_for(tokens: str | Sequence[str], bot_id: str) -> str | None:
+    if isinstance(tokens, str):
+        tokens = [tokens]
+    return next((t for t in tokens if t and _short(t) == str(bot_id)), None)
+
+
+async def _call(token: str, method: str, payload: dict) -> tuple[bool, str]:
+    async with httpx.AsyncClient(timeout=30) as http:
+        for _ in range(3):
+            try:
+                resp = await http.post(f"https://api.telegram.org/bot{token}/{method}", json=payload)
+            except Exception as exc:  # noqa: BLE001
+                await asyncio.sleep(3)
+                last = f"{type(exc).__name__}: {exc}"
+                continue
+            try:
+                data = resp.json()
+            except Exception:  # noqa: BLE001
+                data = {}
+            if resp.status_code == 200:
+                return True, ""
+            if resp.status_code == 429:
+                await asyncio.sleep(int(data.get("parameters", {}).get("retry_after", 5)) + 1)
+                last = "429"
+                continue
+            return False, data.get("description", resp.text[:200])
+    return False, last
+
+
+async def _edit_or_delete(tokens, chat: str, bot_id: str, message_id: int, text: str | None) -> None:
+    token = _token_for(tokens, bot_id)
+    if token is None:
+        return
+    chat = _normalize_chat(chat)
+    if text is None:
+        ok, err = await _call(token, "deleteMessage", {"chat_id": chat, "message_id": message_id})
+        what = "حذف"
+    else:
+        ok, err = await _call(
+            token,
+            "editMessageText",
+            {"chat_id": chat, "message_id": message_id, "text": text, "parse_mode": "HTML",
+             "disable_web_page_preview": True},
+        )
+        what = "ویرایش"
+        if not ok and "not modified" in err.lower():
+            ok = True
+    if not ok:
+        print(f"⚠️ {what} پیام {message_id} در {chat} نشد: {err}", flush=True)
+
+
+def edit(tokens, chat: str, bot_id: str, message_id: int, text: str) -> None:
+    """پیامی را که قبلاً ربات در گروه گذاشته با متن تازه ویرایش می‌کند (غیر مسدودکننده)."""
+    _tasks.append(asyncio.create_task(_edit_or_delete(tokens, chat, bot_id, message_id, text)))
+
+
+def delete(tokens, chat: str, bot_id: str, message_id: int) -> None:
+    """پیامی را که قبلاً ربات در گروه گذاشته پاک می‌کند (غیر مسدودکننده)."""
+    _tasks.append(asyncio.create_task(_edit_or_delete(tokens, chat, bot_id, message_id, None)))

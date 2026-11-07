@@ -23,7 +23,13 @@ from telethon.tl.functions.channels import JoinChannelRequest, LeaveChannelReque
 from telethon.tl.types import PeerChannel
 
 from .config import Settings
-from .bot_forwarder import build_message as build_bot_message, enqueue as enqueue_bot_message
+from .bot_forwarder import (
+    build_message as build_bot_message,
+    delete as delete_bot_message,
+    edit as edit_bot_message,
+    enqueue as enqueue_bot_message,
+    set_sent_callback,
+)
 from .api.events import broadcast_new_ad, broadcast_price_alert, broadcast_price_update
 from .carx_bridge import ad_row_to_dto, push_ads_async
 from .api.price_tracker import check_price_change
@@ -31,6 +37,11 @@ from .net import parse_proxy_from_env
 from .parser import parse_message_group
 from .storage import (
     block_channel,
+    claim_group_forward,
+    forget_group_forward,
+    get_group_forward,
+    group_forward_edited,
+    set_group_forward_sent,
     is_channel_blocked,
     _compute_day_key,
     add_channel,
@@ -287,7 +298,7 @@ def is_member_of(members: set[str] | None, username: str) -> bool:
     return members is None or username.lower() in members
 
 
-async def deliver_backfilled(settings: Settings, items: list) -> int:
+async def deliver_backfilled(settings: Settings, items: list, conn=None) -> int:
     """آگهی‌های جاافتاده‌ی بک‌فیل را مثل پیام زنده به سایت و گروه (با ربات‌ها) می‌فرستد.
 
     items: لیست (username, title, row). فقط sale/buyer/call_price ارسال می‌شوند.
@@ -302,14 +313,23 @@ async def deliver_backfilled(settings: Settings, items: list) -> int:
         await push_ads_async(dtos[i : i + 100])
     target = (settings.forward_target_group or "").lstrip("@").lower()
     if settings.forward_bot_tokens and settings.forward_target_group:
+        # آگهی‌های یک پیام (مثلاً لیست قیمت چندخودرویی) با هم و یک بار فرستاده می‌شوند؛
+        # پیامی که قبلاً (زنده یا بک‌فیل قبلی) به گروه رفته، دوباره نمی‌رود
+        by_msg: dict[tuple[str, str], list] = {}
         for username, title, row in sendable:
             if username.lower() == target:
                 continue
-            url = f"https://t.me/{username}/{row['source_message_id']}"
+            by_msg.setdefault((username, str(row["source_message_id"])), []).append((title, row))
+        for (username, mid), rows in by_msg.items():
+            text = "\n\n".join(r["raw_text"] for _, r in rows if r["raw_text"])
+            if conn is not None and not claim_group_forward(conn, username, mid, text):
+                continue
+            url = f"https://t.me/{username}/{mid}"
             enqueue_bot_message(
                 settings.forward_bot_tokens,
                 settings.forward_target_group,
-                build_bot_message(title, url, row["raw_text"]),
+                build_bot_message(rows[0][0], url, text),
+                key=(username, mid),
             )
     return len(sendable)
 
@@ -361,7 +381,7 @@ async def periodic_backfill_loop(
                 for row in collected:
                     items.append((ch["username"], title, row))
                 await asyncio.sleep(0.3)
-            total = await deliver_backfilled(settings, items)
+            total = await deliver_backfilled(settings, items, conn)
             print(
                 f"🔁 بک‌فیل دوره‌ای: {len(channels)} کانال، {len(items)} آگهی جاافتاده، "
                 f"{total} ارسال‌شده، {len(not_member)} کانال عضو نبودیم و رد شد "
@@ -724,6 +744,8 @@ async def channel_bio_loop(client: TelegramClient, client2: TelegramClient | Non
 async def live_collect() -> None:
     settings = Settings.from_env()
     conn = connect(settings.database_path)
+    # شناسه‌ی هر کپی در گروه مقصد ثبت می‌شود تا با ویرایش/حذف پست، همان کپی ویرایش/حذف شود
+    set_sent_callback(lambda key, bot_id, mid: set_group_forward_sent(conn, key, bot_id, mid))
     proxy = parse_proxy_from_env()
     if proxy:
         print("Using Telegram proxy from TELEGRAM_PROXY.", flush=True)
@@ -834,6 +856,34 @@ async def live_collect() -> None:
     async def handler1(event) -> None:
         await _on_message(event, client)
 
+    async def _on_deleted(event, source_client: TelegramClient) -> None:
+        """پست در کانال پاک شد ← کپی آن در گروه مقصد هم پاک می‌شود."""
+        try:
+            if not event.chat_id or not settings.forward_bot_tokens or not settings.forward_target_group:
+                return
+            try:
+                entity = await source_client.get_entity(event.chat_id)
+            except Exception:  # noqa: BLE001
+                return
+            uname = getattr(entity, "username", None)
+            if not uname:
+                return
+            for mid in event.deleted_ids or []:
+                row = get_group_forward(conn, uname, mid)
+                if row and row["bot_message_id"]:
+                    forget_group_forward(conn, uname, mid)
+                    delete_bot_message(
+                        settings.forward_bot_tokens, settings.forward_target_group,
+                        row["bot_id"], int(row["bot_message_id"]),
+                    )
+                    print(f"🗑 پست {mid} در {uname} پاک شد؛ کپی آن در گروه هم پاک می‌شود.", flush=True)
+        except Exception:  # noqa: BLE001
+            traceback.print_exc()
+
+    @client.on(events.MessageDeleted)
+    async def deleted_handler1(event) -> None:
+        await _on_deleted(event, client)
+
     # ویرایش پیام: نسخه‌ی ویرایش‌شده هم بررسی می‌شود (اگر متنش با نسخه‌های
     # ذخیره‌شده فرق کند آگهی تازه حساب می‌شود؛ متن یکسان خودبه‌خود رد می‌شود).
     @client.on(events.MessageEdited)
@@ -848,6 +898,10 @@ async def live_collect() -> None:
         @extra_client.on(events.MessageEdited)
         async def _edit(event) -> None:
             await _on_message(event, extra_client)
+
+        @extra_client.on(events.MessageDeleted)
+        async def _deleted(event) -> None:
+            await _on_deleted(event, extra_client)
 
     for _n, _c in sorted(EXTRA_ACCOUNTS.items()):
         _attach(_c)
@@ -915,6 +969,19 @@ async def _handle_new_message(event, client, conn, known: set[str], known_groups
     channel = get_channel_by_username(conn, username)
     if channel is None or not channel["active"]:
         return
+    if isinstance(event, events.MessageEdited.Event) and settings is not None and settings.forward_bot_tokens:
+        # پست ویرایش شد: اگر قبلاً در گروه مقصد گذاشته شده، همان پیام گروه با متن تازه
+        # ویرایش می‌شود (پیام تازه ساخته نمی‌شود)
+        _prev = get_group_forward(conn, username, event.message.id)
+        if _prev and _prev["bot_message_id"] and group_forward_edited(conn, username, event.message.id, event.message.message):
+            _title = (getattr(chat, "title", None) or "").strip() or (channel["title"] or "").strip() or f"@{username}"
+            edit_bot_message(
+                settings.forward_bot_tokens,
+                settings.forward_target_group,
+                _prev["bot_id"],
+                int(_prev["bot_message_id"]),
+                build_bot_message(_title, f"https://t.me/{username}/{event.message.id}", event.message.message),
+            )
     ads = parse_message_group(str(event.message.id), event.message.message, event.message.date, source="live")
     saved_ads = save_ads(conn, ads, channel_id=channel["id"], channel_username=username)
 
@@ -946,9 +1013,15 @@ async def _handle_new_message(event, client, conn, known: set[str], known_groups
                 or (channel["title"] or "").strip()
                 or f"@{username}"
             )
-            source_url = f"https://t.me/{username}/{event.message.id}"
-            text = build_bot_message(source_title, source_url, event.message.message)
-            enqueue_bot_message(settings.forward_bot_tokens, settings.forward_target_group, text)
+            # هر پیام کانال فقط یک بار به گروه می‌رود: ویرایش‌های بعدی (مثلاً عوض شدن
+            # قیمت یک ردیف از لیست) یا پست دوباره‌ی همان متن، کپی تازه نمی‌سازد
+            if claim_group_forward(conn, username, event.message.id, event.message.message):
+                source_url = f"https://t.me/{username}/{event.message.id}"
+                text = build_bot_message(source_title, source_url, event.message.message)
+                enqueue_bot_message(
+                    settings.forward_bot_tokens, settings.forward_target_group, text,
+                    key=(username, event.message.id),
+                )
 
     triggered_alerts = check_price_alerts(
         conn,

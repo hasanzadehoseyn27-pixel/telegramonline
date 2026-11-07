@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import re
 import sqlite3
+import time
 
 import jdatetime
 from datetime import datetime, timedelta, timezone
@@ -2820,3 +2822,117 @@ def get_live_cheapest_vehicles(
             offset,
         ),
     ).fetchall()
+
+
+# ─────────────── گروه مقصد: هر پیام کانال فقط یک بار ───────────────
+_GROUP_FORWARD_SCHEMA = """
+CREATE TABLE IF NOT EXISTS group_forward_log (
+    channel TEXT NOT NULL,
+    message_id TEXT NOT NULL,
+    text_key TEXT,
+    created_at INTEGER NOT NULL,
+    bot_id TEXT,                 -- رباتی که کپی را در گروه گذاشت
+    bot_message_id INTEGER,      -- شناسه‌ی همان کپی در گروه (برای ویرایش/حذف)
+    PRIMARY KEY (channel, message_id)
+);
+CREATE INDEX IF NOT EXISTS ix_group_forward_text ON group_forward_log(channel, text_key);
+"""
+_group_forward_ready: set[int] = set()
+_GF_DIGITS = str.maketrans("۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩", "01234567890123456789")
+
+
+def _group_forward_text_key(text: str | None) -> str | None:
+    if not text:
+        return None
+    t = text.translate(_GF_DIGITS).replace("ي", "ی").replace("ك", "ک")
+    t = re.sub(r"https?://\S+|t\.me/\S+|@\w+", " ", t)
+    t = re.sub(r"[\W_]+", "", t).lower()
+    return t if len(t) >= 20 else None
+
+
+def _ensure_group_forward(conn: sqlite3.Connection) -> None:
+    if id(conn) not in _group_forward_ready:
+        conn.executescript(_GROUP_FORWARD_SCHEMA)
+        _group_forward_ready.add(id(conn))
+
+
+def claim_group_forward(conn: sqlite3.Connection, channel: str, message_id, text: str | None) -> bool:
+    """True یعنی این پیام باید به گروه مقصد فرستاده شود (و از الان «فرستاده‌شده» ثبت می‌شود).
+
+    - هر پیام کانال (کانال + شماره‌ی پیام) فقط یک بار: ویرایش‌های بعدی صاحب کانال
+      (مثلاً عوض کردن قیمت یک ردیف از لیست) دیگر کل پیام را دوباره نمی‌فرستند.
+    - اگر همان کانال همان متن را در ۲۴ ساعت گذشته با پیام دیگری فرستاده، دوباره نمی‌رود.
+    """
+    _ensure_group_forward(conn)
+    ch = (channel or "").lstrip("@").lower()
+    mid = str(message_id)
+    now = int(time.time())
+    if conn.execute("SELECT 1 FROM group_forward_log WHERE channel=? AND message_id=?", (ch, mid)).fetchone():
+        return False
+    key = _group_forward_text_key(text)
+    if key and conn.execute(
+        "SELECT 1 FROM group_forward_log WHERE channel=? AND text_key=? AND created_at>=?",
+        (ch, key, now - 86400),
+    ).fetchone():
+        conn.execute(
+            "INSERT OR IGNORE INTO group_forward_log (channel, message_id, text_key, created_at) VALUES (?, ?, ?, ?)",
+            (ch, mid, key, now),
+        )
+        conn.commit()
+        return False
+    conn.execute(
+        "INSERT OR IGNORE INTO group_forward_log (channel, message_id, text_key, created_at) VALUES (?, ?, ?, ?)",
+        (ch, mid, key, now),
+    )
+    conn.execute("DELETE FROM group_forward_log WHERE created_at < ?", (now - 3 * 86400,))
+    conn.commit()
+    return True
+
+
+def set_group_forward_sent(conn: sqlite3.Connection, key, bot_id: str, bot_message_id: int) -> None:
+    """بعد از ارسال موفق: کدام ربات و کدام پیام گروه، کپیِ این پست کانال است."""
+    _ensure_group_forward(conn)
+    ch, mid = key
+    conn.execute(
+        "UPDATE group_forward_log SET bot_id=?, bot_message_id=? WHERE channel=? AND message_id=?",
+        (str(bot_id), int(bot_message_id), (ch or "").lstrip("@").lower(), str(mid)),
+    )
+    conn.commit()
+
+
+def get_group_forward(conn: sqlite3.Connection, channel: str, message_id) -> sqlite3.Row | None:
+    _ensure_group_forward(conn)
+    cur = conn.execute(
+        "SELECT channel, message_id, text_key, bot_id, bot_message_id FROM group_forward_log WHERE channel=? AND message_id=?",
+        ((channel or "").lstrip("@").lower(), str(message_id)),
+    )
+    row = cur.fetchone()
+    if row is None:
+        return None
+    return dict(zip(("channel", "message_id", "text_key", "bot_id", "bot_message_id"), row))
+
+
+def group_forward_edited(conn: sqlite3.Connection, channel: str, message_id, text: str | None) -> bool:
+    """متن پست ویرایش‌شده با نسخه‌ی قبلی فرق دارد؟ اگر بله، متن تازه ثبت می‌شود و True."""
+    row = get_group_forward(conn, channel, message_id)
+    if row is None:
+        return False
+    key = _group_forward_text_key(text)
+    if key == row["text_key"]:
+        return False
+    conn.execute(
+        "UPDATE group_forward_log SET text_key=? WHERE channel=? AND message_id=?",
+        (key, row["channel"], row["message_id"]),
+    )
+    conn.commit()
+    return True
+
+
+def forget_group_forward(conn: sqlite3.Connection, channel: str, message_id) -> None:
+    """پست در کانال پاک شد: ثبتش هم پاک می‌شود (کپی گروه را خود فراخواننده پاک می‌کند)."""
+    _ensure_group_forward(conn)
+    conn.execute(
+        "UPDATE group_forward_log SET bot_message_id=NULL, text_key=NULL WHERE channel=? AND message_id=?",
+        ((channel or "").lstrip("@").lower(), str(message_id)),
+    )
+    conn.commit()
