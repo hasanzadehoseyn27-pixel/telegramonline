@@ -240,6 +240,7 @@ async def backfill_today(
     parsed = []
     total_seen = 0
     inserted = 0
+    group_source = False
     try:
         async for message in client.iter_messages(channel_username):
             total_seen += 1
@@ -249,8 +250,10 @@ async def backfill_today(
                 continue
             if getattr(message, "via_bot_id", None) or getattr(getattr(message, "sender", None), "bot", False):
                 continue  # کپیِ ربات‌های فوروارد (مثل K1khodro_ads…) آگهی تازه نیست
-            if message.fwd_from is not None and _is_group_chat(getattr(message, "chat", None)):
-                continue  # فوروارد در گروه = کپی پست یک کانال دیگر
+            in_group = _is_group_chat(getattr(message, "chat", None))
+            group_source = group_source or in_group
+            if in_group and (message.fwd_from is not None or _looks_copied(message.message)):
+                continue  # فوروارد/کپی در گروه = پست یک کانال دیگر
             message_date = message.date
             if message_date and message_date.tzinfo is None:
                 message_date = message_date.replace(tzinfo=timezone.utc)
@@ -264,12 +267,13 @@ async def backfill_today(
             if len(parsed) >= 300:
                 saved = save_ads(conn, parsed, channel_id=channel_id, channel_username=channel_username)
                 inserted += len(saved)
-                if collected is not None:
+                if collected is not None and not group_source:
                     collected.extend(saved)
                 parsed.clear()
         saved = save_ads(conn, parsed, channel_id=channel_id, channel_username=channel_username)
         inserted += len(saved)
-        if collected is not None:
+        # پیام‌های «گروه»ها در بک‌فیل فقط ذخیره می‌شوند؛ کپی به گروه مقصد فقط برای کانال‌هاست
+        if collected is not None and not group_source:
             collected.extend(saved)
     except Exception as exc:  # noqa: BLE001
         print(f"⚠️ خطا در بک‌فیل کانال {channel_username}: {exc}", flush=True)
@@ -942,6 +946,13 @@ async def _get_chat_safe(event, client: TelegramClient):
         return None
 
 
+def _looks_copied(text: str | None) -> bool:
+    """متنی که با «Forwarded from …» شروع می‌شود کپیِ پست یک کانال دیگر است
+    (ابزارهای فوروارد «کپی» می‌کنند و این خط را خودشان بالای متن می‌گذارند)."""
+    head = "\n".join((text or "").strip().splitlines()[:2]).lower()
+    return "forwarded from" in head or "فوروارد از" in head or "فورواردشده از" in head
+
+
 def _is_group_chat(chat) -> bool:
     """گروه (سوپرگروه یا گروه معمولی)، نه کانالِ پخش."""
     if chat is None:
@@ -1003,7 +1014,7 @@ async def _handle_new_message(event, client, conn, known: set[str], known_groups
     # است که آدم‌ها/ربات‌های فوروارد مدام تکرارش می‌کنند (مثل گروه samen5650). اگر خوانده
     # شود، آگهی کانال‌های دیگر با اسم گروه («اتو ثامن») هر چند دقیقه در گروه مقصد تکرار
     # می‌شود. کانال اصلی خودش جداگانه خوانده می‌شود (کشف کانال از گروه بالاتر انجام شد).
-    if _is_group_chat(chat) and event.message.fwd_from is not None:
+    if _is_group_chat(chat) and (event.message.fwd_from is not None or _looks_copied(event.message.message)):
         return
     channel = get_channel_by_username(conn, username)
     if channel is None or not channel["active"]:
@@ -1052,6 +1063,9 @@ async def _handle_new_message(event, client, conn, known: set[str], known_groups
             and settings.forward_bot_tokens
             and settings.forward_target_group
             and (username or "").lower() != _target_name
+            # فقط پست «کانال»ها در گروه مقصد کپی می‌شود؛ پیام‌های یک «گروه» (مثل samen5650)
+            # با اسم آن گروه می‌رفت، در حالی که آگهی مال کانال/نمایشگاه دیگری بود
+            and not _is_group_chat(chat)
         ):
             # اسم کانال: اول از خود تلگرام (chat.title)، بعد از دیتابیس، آخر یوزرنیم
             source_title = (
