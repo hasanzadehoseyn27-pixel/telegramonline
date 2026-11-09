@@ -249,6 +249,8 @@ async def backfill_today(
                 continue
             if getattr(message, "via_bot_id", None) or getattr(getattr(message, "sender", None), "bot", False):
                 continue  # کپیِ ربات‌های فوروارد (مثل K1khodro_ads…) آگهی تازه نیست
+            if message.fwd_from is not None and _is_group_chat(getattr(message, "chat", None)):
+                continue  # فوروارد در گروه = کپی پست یک کانال دیگر
             message_date = message.date
             if message_date and message_date.tzinfo is None:
                 message_date = message_date.replace(tzinfo=timezone.utc)
@@ -940,6 +942,15 @@ async def _get_chat_safe(event, client: TelegramClient):
         return None
 
 
+def _is_group_chat(chat) -> bool:
+    """گروه (سوپرگروه یا گروه معمولی)، نه کانالِ پخش."""
+    if chat is None:
+        return False
+    if getattr(chat, "megagroup", False) or getattr(chat, "gigagroup", False):
+        return True
+    return not hasattr(chat, "broadcast")  # Chat معمولی ویژگی broadcast ندارد
+
+
 async def _sent_by_bot(event) -> bool:
     msg = event.message
     if getattr(msg, "via_bot_id", None):
@@ -987,6 +998,12 @@ async def _handle_new_message(event, client, conn, known: set[str], known_groups
     # آگهی تازه نیست: کپی آگهیِ یک کانال است که هر چند دقیقه تکرار می‌شود. اگر خوانده
     # شود، همان آگهی با اسم آن گروه هر چند دقیقه یک بار در گروه مقصد هم تکرار می‌شود.
     if await _sent_by_bot(event):
+        return
+    # در «گروه»ها (نه کانال)، پیامِ فورواردشده آگهیِ خود گروه نیست: کپیِ پست یک کانال
+    # است که آدم‌ها/ربات‌های فوروارد مدام تکرارش می‌کنند (مثل گروه samen5650). اگر خوانده
+    # شود، آگهی کانال‌های دیگر با اسم گروه («اتو ثامن») هر چند دقیقه در گروه مقصد تکرار
+    # می‌شود. کانال اصلی خودش جداگانه خوانده می‌شود (کشف کانال از گروه بالاتر انجام شد).
+    if _is_group_chat(chat) and event.message.fwd_from is not None:
         return
     channel = get_channel_by_username(conn, username)
     if channel is None or not channel["active"]:
