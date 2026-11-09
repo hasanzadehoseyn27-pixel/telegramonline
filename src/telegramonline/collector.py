@@ -247,6 +247,8 @@ async def backfill_today(
                 continue
             if message.sticker:
                 continue
+            if getattr(message, "via_bot_id", None) or getattr(getattr(message, "sender", None), "bot", False):
+                continue  # کپیِ ربات‌های فوروارد (مثل K1khodro_ads…) آگهی تازه نیست
             message_date = message.date
             if message_date and message_date.tzinfo is None:
                 message_date = message_date.replace(tzinfo=timezone.utc)
@@ -938,6 +940,22 @@ async def _get_chat_safe(event, client: TelegramClient):
         return None
 
 
+async def _sent_by_bot(event) -> bool:
+    msg = event.message
+    if getattr(msg, "via_bot_id", None):
+        return True
+    from_id = getattr(msg, "from_id", None)
+    if from_id is None or not hasattr(from_id, "user_id"):
+        return False  # پست خودِ کانال (فرستنده کانال است، نه کاربر/ربات)
+    sender = getattr(msg, "sender", None)
+    if sender is None:
+        try:
+            sender = await event.get_sender()
+        except Exception:  # noqa: BLE001
+            return False
+    return bool(getattr(sender, "bot", False))
+
+
 async def _handle_new_message(event, client, conn, known: set[str], known_groups: set[str], settings=None, client2: TelegramClient | None = None) -> None:
     chat = await _get_chat_safe(event, client)
     if chat is None:
@@ -964,6 +982,11 @@ async def _handle_new_message(event, client, conn, known: set[str], known_groups
     if not event.message.message:
         return
     if event.message.sticker:
+        return
+    # پیامی که یک «ربات» در گروه گذاشته (مثلاً ربات‌های فوروارد خودمان، K1khodro_ads…)
+    # آگهی تازه نیست: کپی آگهیِ یک کانال است که هر چند دقیقه تکرار می‌شود. اگر خوانده
+    # شود، همان آگهی با اسم آن گروه هر چند دقیقه یک بار در گروه مقصد هم تکرار می‌شود.
+    if await _sent_by_bot(event):
         return
     channel = get_channel_by_username(conn, username)
     if channel is None or not channel["active"]:
