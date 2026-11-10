@@ -324,11 +324,13 @@ async def deliver_backfilled(settings: Settings, items: list, conn=None) -> int:
         # پیامی که قبلاً (زنده یا بک‌فیل قبلی) به گروه رفته، دوباره نمی‌رود
         by_msg: dict[tuple[str, str], list] = {}
         for username, title, row in sendable:
-            if username.lower() == target:
+            if username.lower() == target or _copy_excluded(username):
                 continue
             by_msg.setdefault((username, str(row["source_message_id"])), []).append((title, row))
         for (username, mid), rows in by_msg.items():
             text = "\n\n".join(r["raw_text"] for _, r in rows if r["raw_text"])
+            if _looks_copied(text):
+                continue  # کپیِ پست یک کانال دیگر
             if conn is not None and not claim_group_forward(conn, username, mid, text):
                 continue
             url = f"https://t.me/{username}/{mid}"
@@ -962,6 +964,36 @@ def _is_group_chat(chat) -> bool:
     return not hasattr(chat, "broadcast")  # Chat معمولی ویژگی broadcast ندارد
 
 
+# گروه/کانال‌هایی که خودشان «مقصد» ربات‌های فوروارد ما (k1ads روی سرور 185) هستند.
+# هر چه در آن‌ها هست کپیِ آگهی کانال‌های دیگر است که هر چند دقیقه تکرار می‌شود؛ پس هیچ
+# پیامی از آن‌ها در گروه مقصد (@gorohekhodroe) کپی نمی‌شود. با FORWARD_EXCLUDE_SOURCES در
+# .env (یوزرنیم‌ها با کاما) می‌شود موارد دیگری اضافه کرد.
+_DEFAULT_COPY_EXCLUDE = {
+    "samen5650", "samen7585", "bazarbozorgekhodroiran", "autohajiesmaili", "oturoyaltahamtan",
+    "asadiafshin343", "auto_malek_plosqom", "k1khodro", "atosaiman7090",
+}
+
+
+def _copy_excluded(username: str | None) -> bool:
+    import os
+
+    extra = {x.strip().lstrip("@").lower() for x in os.getenv("FORWARD_EXCLUDE_SOURCES", "").split(",") if x.strip()}
+    return (username or "").lstrip("@").lower() in (_DEFAULT_COPY_EXCLUDE | extra)
+
+
+def _group_copy_allowed(username: str | None, chat, message) -> bool:
+    """این پیام کپیِ «اصل» یک کانال است و می‌شود در گروه مقصد گذاشت؟"""
+    if _copy_excluded(username):
+        return False
+    if _is_group_chat(chat):
+        return False
+    if getattr(message, "fwd_from", None) is not None:
+        return False  # فورواردِ پست یک کانال دیگر (با اسم این کانال نرود)
+    if _looks_copied(getattr(message, "message", None)):
+        return False  # کپیِ دستیِ پست یک کانال دیگر («Forwarded from …» بالای متن)
+    return True
+
+
 async def _sent_by_bot(event) -> bool:
     msg = event.message
     if getattr(msg, "via_bot_id", None):
@@ -1023,7 +1055,11 @@ async def _handle_new_message(event, client, conn, known: set[str], known_groups
         # پست ویرایش شد: نسخه‌ی ویرایش‌شده به‌صورت «پیام تازه» در گروه گذاشته می‌شود و
         # کپی قبلیِ همان پست پاک می‌شود (تا از هر پست فقط آخرین نسخه در گروه بماند)
         _prev = get_group_forward(conn, username, event.message.id)
-        if _prev and group_forward_edited(conn, username, event.message.id, event.message.message):
+        if (
+            _prev
+            and _group_copy_allowed(username, chat, event.message)
+            and group_forward_edited(conn, username, event.message.id, event.message.message)
+        ):
             if _prev["bot_message_id"]:
                 delete_bot_message(
                     settings.forward_bot_tokens,
@@ -1063,9 +1099,9 @@ async def _handle_new_message(event, client, conn, known: set[str], known_groups
             and settings.forward_bot_tokens
             and settings.forward_target_group
             and (username or "").lower() != _target_name
-            # فقط پست «کانال»ها در گروه مقصد کپی می‌شود؛ پیام‌های یک «گروه» (مثل samen5650)
-            # با اسم آن گروه می‌رفت، در حالی که آگهی مال کانال/نمایشگاه دیگری بود
-            and not _is_group_chat(chat)
+            # فقط پستِ «اصل» کانال‌ها در گروه مقصد کپی می‌شود: نه پیام گروه‌ها، نه فوروارد/کپیِ
+            # پست کانال دیگر، نه گروه‌هایی که خودشان مقصد ربات‌های فوروارد ما هستند (samen5650…)
+            and _group_copy_allowed(username, chat, event.message)
         ):
             # اسم کانال: اول از خود تلگرام (chat.title)، بعد از دیتابیس، آخر یوزرنیم
             source_title = (
